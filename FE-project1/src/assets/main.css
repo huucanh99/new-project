@@ -1,0 +1,28 @@
+/* Reset đơn giản */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* Font tổng */
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f6fb; /* nền ngoài */
+}
+
+/* Xoá toàn bộ style #app mặc định của Vite */
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  max-width: none !important;
+  display: block !important;
+}
