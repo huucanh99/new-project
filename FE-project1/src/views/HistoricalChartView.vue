@@ -1,29 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
+import TimeClock from "@/components/TimeClock.vue";
 
-/* ==== Real-time clock on top ==== */
-const nowText = ref("");
-
-const formatTime = (d) => {
-  const pad = (n) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
-};
-
-let timerId = null;
-
-onMounted(() => {
-  nowText.value = formatTime(new Date());
-  timerId = setInterval(() => {
-    nowText.value = formatTime(new Date());
-  }, 1000);
-});
-
-onUnmounted(() => {
-  if (timerId) clearInterval(timerId);
-});
 
 /* ==== Report type & date range ==== */
 const reportTypes = ["Daily Report", "Monthly Report", "Yearly Report"];
@@ -253,11 +231,13 @@ const downloadCsv = () => {
 </script>
 
 <template>
+   <!-- dùng đồng hồ real-time -->
+  <TimeClock class="sp-time" size="normal" align="left" />
   <div class="historical-page">
+   
     <!-- TOP BAR -->
     <header class="top-bar">
-      <!-- dùng đồng hồ real-time -->
-      <div class="top-time">{{ nowText }}</div>
+      
 
       <div class="top-filters">
         <!-- Report type -->
@@ -560,7 +540,6 @@ const downloadCsv = () => {
 <style scoped>
 /* giữ nguyên toàn bộ CSS của anh */
 .historical-page {
-  padding: 8px 24px 24px;
   box-sizing: border-box;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;

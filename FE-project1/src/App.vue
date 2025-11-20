@@ -23,7 +23,7 @@ const goTo = (path) => {
     <div class="dashboard">
       <!-- SIDEBAR (luôn cố định) -->
       <aside class="sidebar">
-        <div class="sidebar-logo">MC</div>
+        <div class="sidebar-logo">Logo</div>
         <nav class="sidebar-menu">
           <button
             v-for="item in menuItems"

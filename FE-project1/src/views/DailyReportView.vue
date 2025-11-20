@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import TimeClock from "@/components/TimeClock.vue";
 
 /* ====== DATA DEMO BÊN POWER & STEEL ====== */
 const powerBatches = [
@@ -31,29 +32,6 @@ const powerTimeData = [
   { time: "8:50", value: 24 },
 ];
 
-/* ====== ĐỒNG HỒ REAL-TIME TRÊN TOP BAR ====== */
-const nowText = ref("");
-
-const formatTime = (d) => {
-  const pad = (n) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
-};
-
-let clockTimerId = null;
-
-onMounted(() => {
-  nowText.value = formatTime(new Date());
-  clockTimerId = setInterval(() => {
-    nowText.value = formatTime(new Date());
-  }, 1000);
-});
-
-onBeforeUnmount(() => {
-  if (clockTimerId) clearInterval(clockTimerId);
-});
 
 /* ====== Report & Date & Shift & Batch ID ====== */
 const reportOptions = ["Daily Total Report", "Shift Report", "Batch Summary"];
@@ -328,11 +306,11 @@ const linePointsStr = computed(() =>
 </script>
 
 <template>
+  <TimeClock class="sp-time" size="normal" align="left" />
   <div class="daily-report">
     <!-- TOP BAR -->
     <header class="dr-topbar">
       <div class="dr-top-left">
-        <div class="dr-time">{{ nowText }}</div>
         <!-- chỉ hiện khi KHÔNG phải Batch Summary -->
         <div
           class="dr-batch"
@@ -441,7 +419,6 @@ const linePointsStr = computed(() =>
              VERSION 1: DRAGGABLE (CŨ – ĐANG ĐÓNG BĂNG)
              BẬT LÊN BẰNG CÁCH BỎ COMMENT, RỒI COMMENT VERSION 2
              ========================= -->
-        <!--
         <div class="dr-summary-content time">
           <span
             class="big"
@@ -458,11 +435,12 @@ const linePointsStr = computed(() =>
           </span>
           <span class="unitt">m</span>
         </div>
-        -->
 
         <!-- =========================
              VERSION 2: CLICK-TO-EDIT (MỚI – ĐANG DÙNG)
              ========================= -->
+        <!--
+
         <div
           v-if="!editingTime"
           class="dr-summary-content time"
@@ -506,6 +484,7 @@ const linePointsStr = computed(() =>
             X
           </button>
         </div>
+        -->
       </div>
     </section>
 
@@ -723,13 +702,14 @@ const linePointsStr = computed(() =>
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
+  margin-top: -15px;
 }
 
 .dr-top-left {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
   width: 30%;
+  height: 100%;
+  align-items: center;
 }
 
 .dr-time {
@@ -740,7 +720,6 @@ const linePointsStr = computed(() =>
 
 .dr-batch {
   font-size: 14px;
-  margin-top: -12px;
 }
 
 .dr-top-right {

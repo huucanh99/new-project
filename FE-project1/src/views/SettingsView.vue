@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import upIcon from "@/assets/arrow_up.png";
 import downIcon from "@/assets/arrow_down.png";
+import TimeClock from "@/components/TimeClock.vue";
 
 /* ==== Steel ball type ==== */
 const steelBallTypes = ["Type A", "Type B", "Type C"];
@@ -20,49 +21,126 @@ const alarms = ref({
 });
 
 /* ==== Component Life Warning ==== */
+/* mỗi item có:
+   - warningHours: ngưỡng báo động (giờ, user nhập)
+   - elapsedSeconds: thời gian đã đếm (giây)
+   - running: có đang đếm timer không
+   - alarmed: đã trigger alarm chưa
+*/
 const componentItems = ref([
-  { id: "impeller1", name: "Impeller 1", warningHours: null },
-  { id: "impeller2", name: "Impeller 2", warningHours: null },
-  { id: "blade1", name: "Blade 1", warningHours: null },
-  { id: "blade2", name: "Blade 2", warningHours: null },
-  { id: "claw1", name: "Claw 1", warningHours: null },
-  { id: "claw2", name: "Claw 2", warningHours: null },
-  { id: "clawTube1", name: "Claw Tube 1", warningHours: null },
-  { id: "clawTube2", name: "Claw Tube 2", warningHours: null },
-  { id: "filter", name: "Filter", warningHours: null },
+  {
+    id: "impeller1",
+    name: "Impeller 1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "impeller2",
+    name: "Impeller 2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "blade1",
+    name: "Blade 1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "blade2",
+    name: "Blade 2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "claw1",
+    name: "Claw 1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "claw2",
+    name: "Claw 2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "clawTube1",
+    name: "Claw Tube 1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "clawTube2",
+    name: "Claw Tube 2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "filter",
+    name: "Filter",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
 ]);
 
+// format "XXX" giờ (elapsedSeconds -> giờ, 2 số thập phân)
+const formatHours = (seconds) => {
+  const h = seconds / 3600;
+  return h.toFixed(2);
+};
+
 const saveComponent = (item) => {
-  console.log("Save component warning hours:", item.id, item.warningHours);
-};
+  // validate warningHours
+  const val = Number(item.warningHours);
+  if (!item.warningHours && item.warningHours !== 0) {
+    alert("Please input warning hours before saving.");
+    return;
+  }
+  if (Number.isNaN(val) || val <= 0) {
+    alert("Warning hours must be a positive number.");
+    return;
+  }
 
-const resetComponent = (item) => {
-  item.warningHours = null;
-};
+  // start (or resume) timer
+  item.running = true;
+  item.alarmed = false;
 
-/* ==== Real-time clock ==== */
-const nowText = ref("");
-
-const formatTime = (d) => {
-  const pad = (n) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  console.log(
+    "Save component warning hours (timer started):",
+    item.id,
+    "warningHours =",
+    item.warningHours
   );
 };
 
-let timerId = null;
+const resetComponent = (item) => {
+  // clear accumulated time, clear alarm, start counting from 0 again
+  item.elapsedSeconds = 0;
+  item.alarmed = false;
+  item.running = true;
 
-onMounted(() => {
-  nowText.value = formatTime(new Date());
-  timerId = setInterval(() => {
-    nowText.value = formatTime(new Date());
-  }, 1000);
-});
+  console.log("Reset component timer (back to 0, counting again):", item.id);
+};
 
-onUnmounted(() => {
-  if (timerId) clearInterval(timerId);
-});
 
 /* ==== Validate (optional) ==== */
 const isAlarmInvalid = computed(() => {
@@ -102,10 +180,9 @@ const saveAlarms = () => {
 </script>
 
 <template>
+  <!-- Time -->
+  <TimeClock class="sp-time" size="normal" align="left" />
   <div class="settings-page">
-    <!-- Time -->
-    <div class="sp-time">{{ nowText }}</div>
-
     <!-- Steel Ball Type Settings -->
     <section class="sp-card sp-card-type">
       <div class="sp-card-header sp-card-header--centered">
@@ -269,16 +346,19 @@ const saveAlarms = () => {
 
             <div class="clws-row">
               <span>Accumulated Hours</span>
-              <span class="clws-acc">XXX</span>
+              <span class="clws-acc">
+                {{ formatHours(item.elapsedSeconds) }}
+              </span>
               <span>HR</span>
             </div>
 
             <div class="clws-row2">
               <span>Warning Hours</span>
               <input
-                v-model="item.warningHours"
+                v-model.number="item.warningHours"
                 class="clws-input"
-                type="text"
+                type="number"
+                min="0"
               />
               <span style="margin-left: 25px;">HR</span>
             </div>
@@ -307,7 +387,7 @@ const saveAlarms = () => {
 
 <style scoped>
 .settings-page {
-  padding: 16px 24px;
+  margin-top: -20px;
 }
 
 /* Time text */
@@ -403,7 +483,7 @@ const saveAlarms = () => {
   flex: 1;
   display: flex;
   justify-content: flex-start;
-  gap: 40px; /* khoảng cách giữa Upper và Lower */
+  gap: 40px;
 }
 
 /* Limit block: tất cả nằm trên 1 hàng */
@@ -481,7 +561,7 @@ const saveAlarms = () => {
 
 .clws-card {
   background: #d5deea;
-  padding:  5px;
+  padding: 5px;
   display: grid;
   grid-template-columns: 1fr 140px;
   column-gap: 24px;
@@ -498,7 +578,7 @@ const saveAlarms = () => {
 .clws-name {
   font-size: 20px;
   font-weight: 500;
-  color: #2F5597;
+  color: #2f5597;
 }
 
 /* Row: label | value/input | HR – để HR thẳng hàng */
@@ -532,8 +612,8 @@ const saveAlarms = () => {
 /* RIGHT side: SAVE + RESET */
 .clws-right {
   display: flex;
-  flex-direction: column;   /* <--- xếp dọc SAVE trên RESET */
-  align-items: center;      /* căn giữa theo chiều ngang trong cột */
+  flex-direction: column;
+  align-items: center;
   justify-content: flex-start;
   gap: 8px;
   padding: 10px 15px 10px 0px;

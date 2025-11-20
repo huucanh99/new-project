@@ -1,29 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
+import TimeClock from "@/components/TimeClock.vue";
 
-/* ==== Real-time Clock ==== */
-const nowText = ref("");
-
-const formatTime = (d) => {
-  const pad = (n) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
-};
-
-let timerId = null;
-
-onMounted(() => {
-  nowText.value = formatTime(new Date());
-  timerId = setInterval(() => {
-    nowText.value = formatTime(new Date());
-  }, 1000);
-});
-
-onUnmounted(() => {
-  if (timerId) clearInterval(timerId);
-});
 
 /* ==== Machine Status ==== */
 const machineStatus = "operating";
@@ -50,11 +28,12 @@ const statusClass = computed(() => {
 </script>
 
 <template>
+  <!-- đồng hồ mới -->
+  <TimeClock class="sp-time" size="normal" align="left" />
   <div class="dashboard-content">
+     
     <!-- TOP BAR -->
     <header class="top-bar">
-      <!-- đồng hồ mới -->
-      <div class="time">{{ nowText }}</div>
 
       <div class="top-bar-right">
         <button class="alert-button">Alert</button>
@@ -165,14 +144,16 @@ const statusClass = computed(() => {
 .dashboard-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 /* TOP BAR */
 .time {
   font-size: 20px;
 }
-
+.top-bar{
+  margin-top: -25px;
+}
 .top-bar-right {
   display: flex;
   justify-content: flex-end;
