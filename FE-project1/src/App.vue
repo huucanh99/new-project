@@ -113,5 +113,6 @@ html, body, #app {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  background: white;
 }
 </style>

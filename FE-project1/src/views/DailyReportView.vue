@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 
+/* ====== DATA DEMO BÊN POWER & STEEL ====== */
 const powerBatches = [
   { batch: "250930_0801", value: 25 },
   { batch: "250930_0820", value: 30 },
@@ -29,6 +30,30 @@ const powerTimeData = [
   { time: "8:40", value: 20 },
   { time: "8:50", value: 24 },
 ];
+
+/* ====== ĐỒNG HỒ REAL-TIME TRÊN TOP BAR ====== */
+const nowText = ref("");
+
+const formatTime = (d) => {
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
+};
+
+let clockTimerId = null;
+
+onMounted(() => {
+  nowText.value = formatTime(new Date());
+  clockTimerId = setInterval(() => {
+    nowText.value = formatTime(new Date());
+  }, 1000);
+});
+
+onBeforeUnmount(() => {
+  if (clockTimerId) clearInterval(clockTimerId);
+});
 
 /* ====== Report & Date & Shift & Batch ID ====== */
 const reportOptions = ["Daily Total Report", "Shift Report", "Batch Summary"];
@@ -188,6 +213,75 @@ const alarmRows = ref([
 
 const showAlarmModal = ref(false);
 
+/* ====== TIME CHO CARD "Time" – DÙNG CHUNG CẢ 2 KIỂU ====== */
+const timeHour = ref(12);
+const timeMinute = ref(34);
+
+const clamp = (val, min, max) => {
+  const n = Number(val);
+  if (Number.isNaN(n)) return min;
+  return Math.min(max, Math.max(min, n));
+};
+
+/* =========================
+   VERSION 1: DRAGGABLE (CŨ)
+   (HIỆN ĐANG "ĐÓNG BĂNG" – CHƯA DÙNG)
+   ========================= */
+
+const draggingPart = ref(null); // 'hour' | 'minute' | null
+const lastY = ref(0);
+
+const onTimeMouseDown = (part, e) => {
+  draggingPart.value = part; // 'hour' hoặc 'minute'
+  lastY.value = e.clientY;
+  window.addEventListener("mousemove", onTimeMouseMove);
+  window.addEventListener("mouseup", onTimeMouseUp);
+};
+
+const onTimeMouseMove = (e) => {
+  if (!draggingPart.value) return;
+  const dy = e.clientY - lastY.value;
+  const step = Math.floor(dy / -10); // kéo lên: dy âm → step dương
+  if (!step) return;
+  lastY.value = e.clientY;
+
+  if (draggingPart.value === "hour") {
+    timeHour.value = clamp(timeHour.value + step, 0, 99);
+  } else {
+    timeMinute.value = clamp(timeMinute.value + step, 0, 59);
+  }
+};
+
+const onTimeMouseUp = () => {
+  draggingPart.value = null;
+  window.removeEventListener("mousemove", onTimeMouseMove);
+  window.removeEventListener("mouseup", onTimeMouseUp);
+};
+
+/* =========================
+   VERSION 2: CLICK-TO-EDIT (MỚI – ĐANG ACTIVE)
+   ========================= */
+
+const editingTime = ref(false);
+const tempHour = ref(timeHour.value);
+const tempMinute = ref(timeMinute.value);
+
+const openTimeEditor = () => {
+  editingTime.value = true;
+  tempHour.value = timeHour.value;
+  tempMinute.value = timeMinute.value;
+};
+
+const confirmTime = () => {
+  timeHour.value = clamp(tempHour.value, 0, 99);
+  timeMinute.value = clamp(tempMinute.value, 0, 59);
+  editingTime.value = false;
+};
+
+const cancelTimeEdit = () => {
+  editingTime.value = false;
+};
+
 /* ====== Chart scale (bar) ====== */
 const maxHeight = 168;
 const maxValue = 35;
@@ -238,7 +332,7 @@ const linePointsStr = computed(() =>
     <!-- TOP BAR -->
     <header class="dr-topbar">
       <div class="dr-top-left">
-        <div class="dr-time">2025-09-30 01:02:03</div>
+        <div class="dr-time">{{ nowText }}</div>
         <!-- chỉ hiện khi KHÔNG phải Batch Summary -->
         <div
           class="dr-batch"
@@ -342,11 +436,75 @@ const linePointsStr = computed(() =>
       <!-- Time -->
       <div class="dr-summary-card">
         <div class="dr-summary-title">Time</div>
+
+        <!-- =========================
+             VERSION 1: DRAGGABLE (CŨ – ĐANG ĐÓNG BĂNG)
+             BẬT LÊN BẰNG CÁCH BỎ COMMENT, RỒI COMMENT VERSION 2
+             ========================= -->
+        <!--
         <div class="dr-summary-content time">
-          <span class="big">12</span>
+          <span
+            class="big"
+            @mousedown="(e) => onTimeMouseDown('hour', e)"
+          >
+            {{ timeHour }}
+          </span>
           <span class="unitt">h</span>
-          <span class="big">34</span>
+          <span
+            class="big"
+            @mousedown="(e) => onTimeMouseDown('minute', e)"
+          >
+            {{ timeMinute.toString().padStart(2, '0') }}
+          </span>
           <span class="unitt">m</span>
+        </div>
+        -->
+
+        <!-- =========================
+             VERSION 2: CLICK-TO-EDIT (MỚI – ĐANG DÙNG)
+             ========================= -->
+        <div
+          v-if="!editingTime"
+          class="dr-summary-content time"
+          @click="openTimeEditor"
+        >
+          <span class="big">{{ timeHour }}</span>
+          <span class="unitt">h</span>
+          <span class="big">
+            {{ timeMinute.toString().padStart(2, "0") }}
+          </span>
+          <span class="unitt">m</span>
+        </div>
+
+        <div
+          v-else
+          class="dr-summary-content time time-editing"
+          @click.stop
+        >
+          <input
+            type="number"
+            v-model="tempHour"
+            min="0"
+            max="99"
+            class="time-input"
+            @keyup.enter="confirmTime"
+          />
+          <span class="unitt">h</span>
+
+          <input
+            type="number"
+            v-model="tempMinute"
+            min="0"
+            max="59"
+            class="time-input"
+            @keyup.enter="confirmTime"
+          />
+          <span class="unitt">m</span>
+
+          <button class="time-btn" @click="confirmTime">OK</button>
+          <button class="time-btn cancel" @click="cancelTimeEdit">
+            X
+          </button>
         </div>
       </div>
     </section>
@@ -372,7 +530,6 @@ const linePointsStr = computed(() =>
             </div>
 
             <div class="dr-chart-bars">
-              <!-- Nếu Batch Summary: vẽ theo TIME; còn lại: vẽ theo batch như cũ -->
               <div
                 v-for="item in (selectedReport === 'Batch Summary'
                   ? powerTimeData
@@ -388,8 +545,6 @@ const linePointsStr = computed(() =>
                   <span class="dr-bar-value">{{ item.value }}</span>
                 </div>
 
-                <!-- label: BatchSummary -> dùng time + class không xoay;
-                     report khác -> giữ batch + class xoay -->
                 <div
                   :class="
                     selectedReport === 'Batch Summary'
@@ -398,7 +553,7 @@ const linePointsStr = computed(() =>
                   "
                 >
                   {{
-                    selectedReport === 'Batch Summary'
+                    selectedReport === "Batch Summary"
                       ? item.time
                       : item.batch
                   }}
@@ -408,7 +563,7 @@ const linePointsStr = computed(() =>
           </div>
 
           <div class="dr-x-axis-label">
-            {{ selectedReport === 'Batch Summary' ? "TIME" : "Batch" }}
+            {{ selectedReport === "Batch Summary" ? "TIME" : "Batch" }}
           </div>
         </div>
 
@@ -456,7 +611,6 @@ const linePointsStr = computed(() =>
                   >
                     {{ p.value }}
                   </text>
-                  <!-- TIME KHÔNG VẼ TRONG SVG NỮA -->
                 </g>
               </svg>
             </div>
@@ -1044,5 +1198,34 @@ const linePointsStr = computed(() =>
 .line-chart-time-row span {
   min-width: 0;
   text-align: center;
+}
+
+/* ====== TIME EDIT MODE (VERSION 2) ====== */
+.time-editing {
+  gap: 6px;
+}
+
+.time-input {
+  width: 50px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 600;
+  padding: 2px 4px;
+  border: 1px solid #999;
+  border-radius: 4px;
+}
+
+.time-btn {
+  margin-left: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #2f4f7e;
+  background: #e7e6e6;
+  cursor: pointer;
+}
+
+.time-btn.cancel {
+  background: #f8d7da;
 }
 </style>
