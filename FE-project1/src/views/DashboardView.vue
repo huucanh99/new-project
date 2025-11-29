@@ -8,28 +8,20 @@ const errorMsg = ref("");
 
 // batch & status
 const batchId = ref("");
-const machineStatus = ref("offline"); // default
+const machineStatus = ref("offline");
 
 // steel ball
-const steelBallWeight = ref(null); // number | null
+const steelBallWeight = ref(null);
 
 // voltage / rpm / current / power
-const voltage = ref({
-  powerSupply: null,
-});
-
-const rpm = ref({
-  impeller1: null,
-  impeller2: null,
-});
-
+const voltage = ref({ powerSupply: null });
+const rpm = ref({ impeller1: null, impeller2: null });
 const current = ref({
   powerSupply: null,
   impeller1: null,
   impeller2: null,
   dustCollector: null,
 });
-
 const power = ref({
   powerSupply: null,
   impeller1: null,
@@ -37,13 +29,13 @@ const power = ref({
   dustCollector: null,
 });
 
-/* ====== ALARM POPUP (DATA TỪ BE) ====== */
+/* ====== ALARM POPUP ====== */
 const showAlarmModal = ref(false);
 const alarmRows = ref([]);
 const alarmLoading = ref(false);
 const alarmError = ref("");
 
-/* ====== MACHINE STATUS TEXT & COLOR ====== */
+/* ====== STATUS TEXT & COLOR ====== */
 const statusText = {
   operating: "Operating",
   standby: "Standby",
@@ -53,61 +45,46 @@ const statusText = {
 
 const statusClass = computed(() => {
   switch (machineStatus.value) {
-    case "operating":
-      return "status-green";
-    case "standby":
-      return "status-yellow";
-    case "abnormal":
-      return "status-red";
-    case "offline":
-    default:
-      return "status-gray";
+    case "operating": return "status-green";
+    case "standby": return "status-yellow";
+    case "abnormal": return "status-red";
+    default: return "status-gray";
   }
 });
 
-/* ====== NÚT ALERT NHẤP NHÁY KHI STATUS = ABNORMAL ====== */
+/* ====== ALERT BUTTON ====== */
 const alertIsActive = computed(() => machineStatus.value === "abnormal");
 
 /* ====== FORMAT NUMBER ====== */
 const formatNumber = (val) => {
   if (val === null || val === undefined) return "--";
   const num = Number(val);
-  if (Number.isNaN(num)) return "--";
-  return num.toFixed(2);
+  return Number.isNaN(num) ? "--" : num.toFixed(2);
 };
 
 const steelBallWeightDisplay = computed(() =>
-  steelBallWeight.value === null || steelBallWeight.value === undefined
-    ? "--"
-    : Number(steelBallWeight.value).toFixed(2)
+  steelBallWeight.value == null ? "--" : Number(steelBallWeight.value).toFixed(2)
 );
 
-/* ====== DANGER CHO CURRENT IMP1 ====== */
+/* ====== CURRENT DANGER ====== */
 const impeller1CurrentIsDanger = computed(() => {
   const val = current.value.impeller1;
-  return val !== null && val !== undefined && Number(val) >= 500;
+  return val != null && Number(val) >= 500;
 });
 
-/* ====== FETCH API DASHBOARD ====== */
+/* ====== FETCH DASHBOARD (NO LOGIN) ====== */
 const fetchDashboard = async () => {
   loading.value = true;
   errorMsg.value = "";
 
   try {
-    const token = localStorage.getItem("adminToken");
-
     const res = await fetch("http://localhost:4000/api/dashboard", {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: token ? `Bearer ${token}` : "",
-      },
+      headers: { "Content-Type": "application/json" },
     });
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(
-        data.message || `Failed to load dashboard (status ${res.status})`
-      );
+      throw new Error(data.message || `Failed (status: ${res.status})`);
     }
 
     const data = await res.json();
@@ -116,22 +93,17 @@ const fetchDashboard = async () => {
     machineStatus.value = data.machineStatus || "offline";
     steelBallWeight.value = data.steelBallWeight ?? null;
 
-    voltage.value = {
-      powerSupply: data.voltage?.powerSupply ?? null,
-    };
-
+    voltage.value = { powerSupply: data.voltage?.powerSupply ?? null };
     rpm.value = {
       impeller1: data.rpm?.impeller1 ?? null,
       impeller2: data.rpm?.impeller2 ?? null,
     };
-
     current.value = {
       powerSupply: data.current?.powerSupply ?? null,
       impeller1: data.current?.impeller1 ?? null,
       impeller2: data.current?.impeller2 ?? null,
       dustCollector: data.current?.dustCollector ?? null,
     };
-
     power.value = {
       powerSupply: data.power?.powerSupply ?? null,
       impeller1: data.power?.impeller1 ?? null,
@@ -139,40 +111,30 @@ const fetchDashboard = async () => {
       dustCollector: data.power?.dustCollector ?? null,
     };
   } catch (err) {
-    console.error(err);
-    errorMsg.value = err.message || "Failed to load dashboard data";
+    errorMsg.value = err.message;
   } finally {
     loading.value = false;
   }
 };
 
-/* ====== FETCH ALARM HISTORY TỪ BE ====== */
+/* ====== FETCH ALARMS (NO LOGIN) ====== */
 const fetchAlarms = async () => {
   alarmLoading.value = true;
   alarmError.value = "";
 
   try {
-    const token = localStorage.getItem("adminToken");
-
     const res = await fetch("http://localhost:4000/api/alarms", {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: token ? `Bearer ${token}` : "",
-      },
+      headers: { "Content-Type": "application/json" },
     });
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(
-        data.message || `Failed to load alarms (status ${res.status})`
-      );
+      throw new Error(data.message || `Failed (status: ${res.status})`);
     }
 
-    const data = await res.json();
-    alarmRows.value = Array.isArray(data) ? data : [];
+    alarmRows.value = await res.json();
   } catch (err) {
-    console.error(err);
-    alarmError.value = err.message || "Failed to load alarm history";
+    alarmError.value = err.message;
   } finally {
     alarmLoading.value = false;
   }
@@ -188,17 +150,15 @@ onMounted(() => {
 });
 </script>
 
+
 <template>
-  <!-- đồng hồ -->
   <TimeClock class="sp-time" size="normal" align="left" />
 
   <div class="dashboard-content">
-    <!-- Lỗi -->
     <p v-if="errorMsg" style="color: red; margin-bottom: 4px">
       {{ errorMsg }}
     </p>
 
-    <!-- TOP BAR -->
     <header class="top-bar">
       <div class="top-bar-right">
         <button
@@ -239,7 +199,6 @@ onMounted(() => {
 
     <!-- METRICS 1 -->
     <section class="metric-grid">
-      <!-- Voltage -->
       <div class="metric-group">
         <div class="metric-title title-of-all">Voltage (V)</div>
         <div class="metric-card">
@@ -250,7 +209,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- RPM -->
       <div class="metric-group">
         <div class="metric-title title-of-all">Rotation Speed (RPM)</div>
         <div class="metric-row-2">
@@ -272,7 +230,6 @@ onMounted(() => {
 
     <!-- METRICS 2 -->
     <section class="metric-grid2">
-      <!-- Current -->
       <div class="metric-group">
         <div class="metric-title title-of-all">Current (A)</div>
         <div class="metric-row-4">
@@ -306,7 +263,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Power -->
       <div class="metric-group">
         <div class="metric-title title-of-all">Power (kW)</div>
         <div class="metric-row-4">
@@ -338,21 +294,17 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- ========== ALARM POPUP ========== -->
+    <!-- ALARM POPUP -->
     <div v-if="showAlarmModal" class="alarm-backdrop">
       <div class="alarm-modal">
         <div class="alarm-header">
           <span class="alarm-title">Alarm History</span>
-          <button class="alarm-close" @click="showAlarmModal = false">
-            ✕
-          </button>
+          <button class="alarm-close" @click="showAlarmModal = false">✕</button>
         </div>
 
         <div class="alarm-table-wrapper">
           <div v-if="alarmLoading" class="alarm-loading">Loading...</div>
-          <div v-else-if="alarmError" class="alarm-error">
-            {{ alarmError }}
-          </div>
+          <div v-else-if="alarmError" class="alarm-error">{{ alarmError }}</div>
           <table v-else class="alarm-table">
             <thead>
               <tr>
@@ -382,9 +334,10 @@ onMounted(() => {
         </div>
       </div>
     </div>
-    <!-- ========== END ALARM POPUP ========== -->
+
   </div>
 </template>
+
 
 <style scoped>
 .dashboard-content {
@@ -393,22 +346,22 @@ onMounted(() => {
   gap: 12px;
 }
 
-/* TOP BAR */
 .time {
   font-size: 20px;
 }
+
 .top-bar {
   margin-top: -25px;
 }
+
 .top-bar-right {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
 }
 
-/* ALERT BUTTON */
 .alert-button {
-  background: #9e9e9e; /* xám khi bình thường */
+  background: #9e9e9e;
   color: white;
   padding: 10px 25px;
   border-radius: 6px;
@@ -417,29 +370,21 @@ onMounted(() => {
   cursor: pointer;
 }
 
-/* khi machineStatus = abnormal → nhấp nháy đỏ */
 .alert-button--active {
   background: #e53935;
   animation: blink-alert 1s infinite;
 }
 
 @keyframes blink-alert {
-  0% {
-    background: #e53935;
-  }
-  50% {
-    background: #ff867c;
-  }
-  100% {
-    background: #e53935;
-  }
+  0% { background: #e53935; }
+  50% { background: #ff867c; }
+  100% { background: #e53935; }
 }
 
 .batch {
   padding: 10px;
 }
 
-/* PANELS */
 .top-panels {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -467,7 +412,6 @@ onMounted(() => {
   font-size: 48px;
 }
 
-/* STATUS */
 .status-box {
   display: flex;
   gap: 10px;
@@ -500,7 +444,6 @@ onMounted(() => {
   background: gray;
 }
 
-/* METRICS */
 .metric-grid {
   display: grid;
   grid-template-columns: 1fr 2fr;
@@ -515,7 +458,7 @@ onMounted(() => {
 .metric-group {
   background: rgb(214, 220, 229);
   border-radius: 14px;
-  padding: 5px 25px 5px 25px;
+  padding: 5px 25px;
 }
 
 .metric-card {
@@ -552,7 +495,7 @@ onMounted(() => {
 
 .metric-value {
   font-size: 24px;
-  padding: 5px 0px;
+  padding: 5px 0;
   font-weight: 500;
 }
 
@@ -560,7 +503,7 @@ onMounted(() => {
   color: #e53935;
 }
 
-/* ========== CSS POPUP ALARM HISTORY ========== */
+/* ALARM POPUP */
 .alarm-backdrop {
   position: fixed;
   inset: 0;
@@ -604,25 +547,21 @@ onMounted(() => {
   cursor: pointer;
 }
 
-/* Table wrapper với scroll */
 .alarm-table-wrapper {
-  padding: 0;
   max-height: 65vh;
   overflow-y: auto;
 }
 
-.alarm-loading {
+.alarm-loading,
+.alarm-error {
   padding: 12px;
   text-align: center;
 }
 
 .alarm-error {
-  padding: 12px;
-  text-align: center;
   color: red;
 }
 
-/* Table */
 .alarm-table {
   width: 100%;
   border-collapse: collapse;
@@ -647,6 +586,6 @@ onMounted(() => {
 
 .center {
   text-align: center;
-  padding: 12px 10px 12px 10px;
+  padding: 12px 10px;
 }
 </style>

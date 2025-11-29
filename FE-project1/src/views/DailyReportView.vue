@@ -1,197 +1,54 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
-
-/* ====== DATA DEMO BÊN POWER & STEEL ====== */
-const powerBatches = [
-  { batch: "250930_0801", value: 25 },
-  { batch: "250930_0820", value: 30 },
-  { batch: "250930_0955", value: 28 },
-  { batch: "250930_1010", value: 20 },
-  { batch: "250930_1122", value: 25 },
-  { batch: "250930_1220", value: 24 },
-  { batch: "250930_1350", value: 30 },
-  { batch: "250930_1414", value: 25 },
-  { batch: "250930_1450", value: 21 },
-  { batch: "250930_1515", value: 26 },
-];
-
-const steelBatches = [
-  { batch: "250930_0100", value: 25 },
-  { batch: "250930_0101", value: 30 },
-  { batch: "250930_0102", value: 28 },
-  { batch: "250930_0103", value: 20 },
-];
-
-/* ====== POWER THEO TIME DÙNG CHO BATCH SUMMARY (BÊN TRÁI) ====== */
-const powerTimeData = [
-  { time: "8:10", value: 25 },
-  { time: "8:20", value: 30 },
-  { time: "8:30", value: 28 },
-  { time: "8:40", value: 20 },
-  { time: "8:50", value: 24 },
-];
-
 
 /* ====== Report & Date & Shift & Batch ID ====== */
 const reportOptions = ["Daily Total Report", "Shift Report", "Batch Summary"];
 const selectedReport = ref(reportOptions[0]);
 
-// date
-const selectedDate = ref("2025-09-30");
+// ====== Date: mặc định hôm nay ======
+const makeTodayStr = () => {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const selectedDate = ref(makeTodayStr());
 const dateInput = ref(null);
+
 const formattedDate = computed(() => {
   if (!selectedDate.value) return "";
   const d = new Date(selectedDate.value);
   if (Number.isNaN(d.getTime())) return "";
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const dd = String(d.getDate(), 10).padStart(2, "0");
   return `${yyyy} / ${mm} / ${dd}`;
 });
+
 const openDatePicker = () => {
-  if (dateInput.value?.showPicker) {
+  if (dateInput.value && dateInput.value.showPicker) {
     dateInput.value.showPicker();
-  } else {
-    dateInput.value?.focus();
+  } else if (dateInput.value) {
+    dateInput.value.focus();
   }
 };
 
-// shift (chỉ dùng cho Shift Report)
+// ====== Shift (chỉ dùng cho Shift Report) ======
 const shiftOptions = ["Day Shift", "Afternoon Shift", "Noon Shift"];
 const selectedShift = ref(shiftOptions[0]);
 
-// batch ID (chỉ dùng cho Batch Summary) – demo lấy từ steelBatches
-const batchIdOptions = steelBatches.map((b) => b.batch);
-const selectedBatchId = ref(batchIdOptions[0]);
+// ====== Batch ID (cho Batch Summary) – lấy từ BE ======
+const batchIdOptions = ref([]);
+const selectedBatchId = ref("");
 
-/* ====== Alarm table data (demo) ====== */
-const alarmRows = ref([
-  {
-    type: "Current Abnormality",
-    location: "Impeller 2",
-    start: "25/09/30 10:30:00",
-    end: "25/09/30 10:30:00",
-    details: "",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Impeller 1",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "Overtime",
-  },
-  {
-    type: "Current Abnormality",
-    location: "Dust Collector",
-    start: "25/09/30 08:40:00",
-    end: "25/09/30 08:40:30",
-    details: "",
-  },
-  {
-    type: "Weight Abnormal",
-    location: "",
-    start: "25/09/30 08:30:00",
-    end: "25/09/30 09:30:00",
-    details: "",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Claw 1",
-    start: "25/09/30 08:30:00",
-    end: "",
-    details: "Overtime",
-  },
-  // thêm vài dòng cho có scroll
-  {
-    type: "Lifetime Warning",
-    location: "Claw 1",
-    start: "25/09/30 08:30:00",
-    end: "",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Claw 1",
-    start: "25/09/30 08:30:00",
-    end: "",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Claw 1",
-    start: "25/09/30 08:30:00",
-    end: "",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Claw 1",
-    start: "25/09/30 08:30:00",
-    end: "",
-    details: "Overtime",
-  },
-  {
-    type: "Lifetime Warning",
-    location: "Claw 1",
-    start: "25/09/30 08:30:00",
-    end: "",
-    details: "Overtime",
-  },
-]);
-
+/* ====== Alarm table ====== */
+const alarmRows = ref([]);
 const showAlarmModal = ref(false);
 
-/* ====== TIME CHO CARD "Time" – DÙNG CHUNG CẢ 2 KIỂU ====== */
+/* ====== TIME card (drag) ====== */
 const timeHour = ref(12);
 const timeMinute = ref(34);
 
@@ -201,16 +58,11 @@ const clamp = (val, min, max) => {
   return Math.min(max, Math.max(min, n));
 };
 
-/* =========================
-   VERSION 1: DRAGGABLE (CŨ)
-   (HIỆN ĐANG "ĐÓNG BĂNG" – CHƯA DÙNG)
-   ========================= */
-
-const draggingPart = ref(null); // 'hour' | 'minute' | null
+const draggingPart = ref(null);
 const lastY = ref(0);
 
 const onTimeMouseDown = (part, e) => {
-  draggingPart.value = part; // 'hour' hoặc 'minute'
+  draggingPart.value = part; // "hour" | "minute"
   lastY.value = e.clientY;
   window.addEventListener("mousemove", onTimeMouseMove);
   window.addEventListener("mouseup", onTimeMouseUp);
@@ -219,12 +71,12 @@ const onTimeMouseDown = (part, e) => {
 const onTimeMouseMove = (e) => {
   if (!draggingPart.value) return;
   const dy = e.clientY - lastY.value;
-  const step = Math.floor(dy / -10); // kéo lên: dy âm → step dương
+  const step = Math.floor(dy / -10); // kéo lên: dy âm -> step dương
   if (!step) return;
   lastY.value = e.clientY;
 
   if (draggingPart.value === "hour") {
-    timeHour.value = clamp(timeHour.value + step, 0, 99);
+    timeHour.value = clamp(timeHour.value + step, 0, 23);
   } else {
     timeMinute.value = clamp(timeMinute.value + step, 0, 59);
   }
@@ -236,72 +88,202 @@ const onTimeMouseUp = () => {
   window.removeEventListener("mouseup", onTimeMouseUp);
 };
 
-/* =========================
-   VERSION 2: CLICK-TO-EDIT (MỚI – ĐANG ACTIVE)
-   ========================= */
+/* ====== STATE NHẬN TỪ BACKEND ====== */
+const powerTimeData = ref([]);   // [{time, value}]
+const steelLineData = ref([]);   // [{time, value}]
+const powerBatches = ref([]);    // [{batch, time, value}]
+const steelBatches = ref([]);    // [{batch, time, value}]
+const summary = ref({
+  totalPower: 0,
+  totalSteel: 0,
+  totalHours: 0,
+});
 
-const editingTime = ref(false);
-const tempHour = ref(timeHour.value);
-const tempMinute = ref(timeMinute.value);
+const batchInProgress = ref("");
 
-const openTimeEditor = () => {
-  editingTime.value = true;
-  tempHour.value = timeHour.value;
-  tempMinute.value = timeMinute.value;
+const loading = ref(false);
+const error = ref("");
+
+const API_BASE = "http://localhost:4000";
+
+/* ====== GỌI API /api/daily-report ====== */
+const loadDailyReport = async () => {
+  try {
+    loading.value = true;
+    error.value = "";
+
+    const params = new URLSearchParams({
+      date: selectedDate.value,
+      uptoHour: String(timeHour.value),
+      reportType: selectedReport.value,
+    });
+
+    // 👉 Batch Summary thì gửi thêm batchId
+    if (selectedReport.value === "Batch Summary" && selectedBatchId.value) {
+      params.append("batchId", selectedBatchId.value);
+    }
+
+    const res = await fetch(`${API_BASE}/api/daily-report?${params.toString()}`);
+
+    if (!res.ok) {
+      throw new Error(`Failed to load daily report (status ${res.status})`);
+    }
+
+    const data = await res.json();
+
+    powerTimeData.value   = data.powerTimeData   || [];
+    steelLineData.value   = data.steelLineData   || [];
+    powerBatches.value    = data.powerBatches    || [];
+    steelBatches.value    = data.steelBatches    || [];
+    alarmRows.value       = data.alarmRows       || [];
+    summary.value         = data.summary         || summary.value;
+
+    // ====== cập nhật Batch ID list (dùng data.batchIds từ BE) ======
+    const newBatchIds = data.batchIds || [];
+    batchIdOptions.value = newBatchIds;
+
+    // Nếu chưa chọn batch hoặc batch hiện tại không còn trong list → chọn batch đầu
+    if (
+      newBatchIds.length > 0 &&
+      (!selectedBatchId.value || !newBatchIds.includes(selectedBatchId.value))
+    ) {
+      selectedBatchId.value = newBatchIds[0];
+    }
+
+    // batch đang chạy: lấy batch cuối cùng của powerBatches (nếu có)
+    const last = (data.powerBatches || []).slice(-1)[0];
+    batchInProgress.value = last ? last.batch : "";
+  } catch (err) {
+    console.error(err);
+    error.value = err.message || "Error loading daily report";
+  } finally {
+    loading.value = false;
+  }
 };
 
-const confirmTime = () => {
-  timeHour.value = clamp(tempHour.value, 0, 99);
-  timeMinute.value = clamp(tempMinute.value, 0, 59);
-  editingTime.value = false;
-};
+/* ====== DATA CHO CHART TỪ STATE ====== */
+const powerChartData = computed(() => {
+  if (selectedReport.value === "Batch Summary") {
+    return powerTimeData.value;
+  }
+  return powerBatches.value;
+});
 
-const cancelTimeEdit = () => {
-  editingTime.value = false;
-};
+const steelChartData = computed(() => {
+  if (selectedReport.value === "Batch Summary") {
+    // line chart dùng steelLineData, bar không dùng nhưng cứ trả steelBatches cho chắc
+    return steelBatches.value;
+  }
+  return steelBatches.value;
+});
 
 /* ====== Chart scale (bar) ====== */
-const maxHeight = 168;
-const maxValue = 35;
+const maxHeight = 210;   // chiều cao vùng cột
+const maxValue = 35;     // max value
 const barHeight = (v) => `${(v / maxValue) * maxHeight}px`;
 
 /* ====== Line chart cho Batch Summary (Steel Ball) ====== */
-const steelLineData = [
-  { time: "8:10", value: 30 },
-  { time: "8:20", value: 29 },
-  { time: "8:30", value: 28 },
-  { time: "8:40", value: 20 },
-  { time: "8:50", value: 24 },
-];
-
 const lineChartWidth = 400;
 const lineChartHeight = 168;
 
 const steelLineTicks = [35, 30, 25, 20, 15, 10, 5, 0];
+// chừa lề hai bên cho khỏi bị cắt số đầu / số cuối
+const lineChartPaddingX = 12; // anh thích nhiều hơn thì tăng lên 16, 20...
 
 const valueToY = (v) =>
   lineChartHeight - (v / maxValue) * lineChartHeight;
 
 const linePoints = computed(() => {
-  if (steelLineData.length === 1) {
+  const data = steelLineData.value;
+  if (!data.length) return [];
+
+  // chiều ngang bên trong, đã trừ padding 2 bên
+  const innerWidth = lineChartWidth - lineChartPaddingX * 2;
+
+  if (data.length === 1) {
+    // 1 điểm thì cho nằm giữa
     return [
       {
-        ...steelLineData[0],
+        ...data[0],
         x: lineChartWidth / 2,
-        y: valueToY(steelLineData[0].value),
+        y: valueToY(data[0].value),
       },
     ];
   }
-  const stepX = lineChartWidth / (steelLineData.length - 1);
-  return steelLineData.map((p, idx) => ({
+
+  const stepX = innerWidth / (data.length - 1);
+
+  return data.map((p, idx) => ({
     ...p,
-    x: idx * stepX,
+    x: lineChartPaddingX + idx * stepX, // 👈 luôn cách mép một đoạn
     y: valueToY(p.value),
   }));
 });
 
+
 const linePointsStr = computed(() =>
   linePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
+);
+
+/* ====== TOTAL & DISPLAY CHO STEEL / POWER ====== */
+
+// tổng Steel tiêu thụ
+const steelTotal = computed(() => {
+  if (selectedReport.value === "Batch Summary") {
+    return steelLineData.value.reduce(
+      (sum, item) => sum + (Number(item.value) || 0),
+      0
+    );
+  }
+  return steelBatches.value.reduce(
+    (sum, item) => sum + (Number(item.value) || 0),
+    0
+  );
+});
+
+// tổng Power tiêu thụ
+const powerTotal = computed(() => {
+  if (selectedReport.value === "Batch Summary") {
+    return powerTimeData.value.reduce(
+      (sum, item) => sum + (Number(item.value) || 0),
+      0
+    );
+  }
+  return powerBatches.value.reduce(
+    (sum, item) => sum + (Number(item.value) || 0),
+    0
+  );
+});
+
+// fake số tồn trước khi chạy (KG) – sau này có thể thay bằng summary.value.initialSteel
+const steelBaseBefore = ref(5000);
+
+// các string hiển thị đã format sẵn
+const steelBeforeDisplay = computed(() => steelBaseBefore.value.toFixed(2));
+
+const steelAfterDisplay = computed(() => {
+  const after = steelBaseBefore.value - steelTotal.value;
+  return (after > 0 ? after : 0).toFixed(2);
+});
+
+const steelTotalDisplay = computed(() => steelTotal.value.toFixed(2));
+const powerTotalDisplay = computed(() => powerTotal.value.toFixed(2));
+
+/* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI DATE / TIME / REPORT / BATCH ====== */
+onMounted(() => {
+  const now = new Date();
+  timeHour.value = now.getHours();
+  timeMinute.value = now.getMinutes();
+
+  loadDailyReport();
+});
+
+// đổi ngày, đổi giờ, đổi loại report, đổi batch -> gọi lại API
+watch(
+  [selectedDate, timeHour, selectedReport, selectedBatchId],
+  () => {
+    loadDailyReport();
+  }
 );
 </script>
 
@@ -316,7 +298,8 @@ const linePointsStr = computed(() =>
           class="dr-batch"
           v-if="selectedReport !== 'Batch Summary'"
         >
-          Batch in Progress : 250930_0100
+          Batch in Progress :
+          <span>{{ batchInProgress || "-" }}</span>
         </div>
       </div>
 
@@ -384,19 +367,19 @@ const linePointsStr = computed(() =>
           <div class="dr-before-after">
             <div>
               Before :<br />
-              <strong style="padding-left: 20px; font-weight: 500"
-                >1123.45 (KG)</strong
-              >
+              <strong style="padding-left: 20px; font-weight: 500">
+                {{ steelBeforeDisplay }} (KG)
+              </strong>
             </div>
             <div>
               After :<br />
-              <strong style="padding-left: 20px; font-weight: 500"
-                >1000 (KG)</strong
-              >
+              <strong style="padding-left: 20px; font-weight: 500">
+                {{ steelAfterDisplay }} (KG)
+              </strong>
             </div>
           </div>
           <div class="dr-main-value">
-            <span class="big">123.45</span>
+            <span class="big">{{ steelTotalDisplay }}</span>
             <span class="unit">KG</span>
           </div>
         </div>
@@ -406,7 +389,7 @@ const linePointsStr = computed(() =>
       <div class="dr-summary-card">
         <div class="dr-summary-title">Power</div>
         <div class="dr-summary-content center">
-          <span class="big">6543.21</span>
+          <span class="big">{{ powerTotalDisplay }}</span>
           <span class="unitt">kW</span>
         </div>
       </div>
@@ -415,10 +398,6 @@ const linePointsStr = computed(() =>
       <div class="dr-summary-card">
         <div class="dr-summary-title">Time</div>
 
-        <!-- =========================
-             VERSION 1: DRAGGABLE (CŨ – ĐANG ĐÓNG BĂNG)
-             BẬT LÊN BẰNG CÁCH BỎ COMMENT, RỒI COMMENT VERSION 2
-             ========================= -->
         <div class="dr-summary-content time">
           <span
             class="big"
@@ -431,60 +410,10 @@ const linePointsStr = computed(() =>
             class="big"
             @mousedown="(e) => onTimeMouseDown('minute', e)"
           >
-            {{ timeMinute.toString().padStart(2, '0') }}
-          </span>
-          <span class="unitt">m</span>
-        </div>
-
-        <!-- =========================
-             VERSION 2: CLICK-TO-EDIT (MỚI – ĐANG DÙNG)
-             ========================= -->
-        <!--
-
-        <div
-          v-if="!editingTime"
-          class="dr-summary-content time"
-          @click="openTimeEditor"
-        >
-          <span class="big">{{ timeHour }}</span>
-          <span class="unitt">h</span>
-          <span class="big">
             {{ timeMinute.toString().padStart(2, "0") }}
           </span>
           <span class="unitt">m</span>
         </div>
-
-        <div
-          v-else
-          class="dr-summary-content time time-editing"
-          @click.stop
-        >
-          <input
-            type="number"
-            v-model="tempHour"
-            min="0"
-            max="99"
-            class="time-input"
-            @keyup.enter="confirmTime"
-          />
-          <span class="unitt">h</span>
-
-          <input
-            type="number"
-            v-model="tempMinute"
-            min="0"
-            max="59"
-            class="time-input"
-            @keyup.enter="confirmTime"
-          />
-          <span class="unitt">m</span>
-
-          <button class="time-btn" @click="confirmTime">OK</button>
-          <button class="time-btn cancel" @click="cancelTimeEdit">
-            X
-          </button>
-        </div>
-        -->
       </div>
     </section>
 
@@ -508,34 +437,31 @@ const linePointsStr = computed(() =>
               <span>0</span>
             </div>
 
-            <div class="dr-chart-bars">
-              <div
-                v-for="item in (selectedReport === 'Batch Summary'
-                  ? powerTimeData
-                  : powerBatches)"
-                :key="
-                  selectedReport === 'Batch Summary'
-                    ? item.time
-                    : item.batch
-                "
-                class="dr-bar-wrapper"
-              >
-                <div class="dr-bar" :style="{ height: barHeight(item.value) }">
-                  <span class="dr-bar-value">{{ item.value }}</span>
-                </div>
-
+            <!-- ✅ scroll ngang ở đây -->
+            <div class="dr-chart-scroll">
+              <div class="dr-chart-bars">
                 <div
-                  :class="
-                    selectedReport === 'Batch Summary'
-                      ? 'dr-bar-labell'
-                      : 'dr-bar-label'
-                  "
+                  v-for="item in powerChartData"
+                  :key="item.time || item.batch"
+                  class="dr-bar-wrapper"
                 >
-                  {{
-                    selectedReport === "Batch Summary"
-                      ? item.time
-                      : item.batch
-                  }}
+                  <div class="dr-bar" :style="{ height: barHeight(item.value) }">
+                    <span class="dr-bar-value">{{ item.value }}</span>
+                  </div>
+
+                  <div
+                    :class="
+                      selectedReport === 'Batch Summary'
+                        ? 'dr-bar-labell'
+                        : 'dr-bar-label'
+                    "
+                  >
+                    {{
+                      selectedReport === "Batch Summary"
+                        ? item.time
+                        : item.batch
+                    }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -547,7 +473,10 @@ const linePointsStr = computed(() =>
         </div>
 
         <!-- RIGHT CHART: STEEL BALL -->
-        <div class="dr-chart-card">
+        <div
+          class="dr-chart-card"
+          :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }"
+        >
           <!-- ========== BATCH SUMMARY: LINE CHART ========== -->
           <template v-if="selectedReport === 'Batch Summary'">
             <div class="dr-chart-titlee">Steel Ball (KG)</div>
@@ -604,7 +533,7 @@ const linePointsStr = computed(() =>
             <div class="dr-x-axis-label">TIME</div>
           </template>
 
-          <!-- ========== CÁC REPORT KHÁC: BAR CHART CŨ ========== -->
+          <!-- ========== CÁC REPORT KHÁC: BAR CHART ========== -->
           <template v-else>
             <div class="dr-chart-titlee">Steel Ball (KG)</div>
             <div class="dr-chart">
@@ -619,16 +548,19 @@ const linePointsStr = computed(() =>
                 <span>0</span>
               </div>
 
-              <div class="dr-chart-bars">
-                <div
-                  v-for="item in steelBatches"
-                  :key="item.batch"
-                  class="dr-bar-wrapper"
-                >
-                  <div class="dr-bar" :style="{ height: barHeight(item.value) }">
-                    <span class="dr-bar-value">{{ item.value }}</span>
+              <!-- ✅ scroll ngang ở đây - RIGHT -->
+              <div class="dr-chart-scroll dr-chart-scroll-right">
+                <div class="dr-chart-bars dr-chart-bars-right">
+                  <div
+                    v-for="item in steelChartData"
+                    :key="item.batch"
+                    class="dr-bar-wrapper"
+                  >
+                    <div class="dr-bar" :style="{ height: barHeight(item.value) }">
+                      <span class="dr-bar-value">{{ item.value }}</span>
+                    </div>
+                    <div class="dr-bar-labell">{{ item.batch }}</div>
                   </div>
-                  <div class="dr-bar-labell">{{ item.batch }}</div>
                 </div>
               </div>
             </div>
@@ -858,7 +790,7 @@ const linePointsStr = computed(() =>
 
 .dr-summary-content {
   background: #fff;
-  padding: 0px 15px 0px 5px;
+  padding: 5px 10px 5px 5px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -906,15 +838,24 @@ const linePointsStr = computed(() =>
   gap: 12px;
 }
 
+.dr-before-after {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
 /* CARD */
 .dr-chart-card {
   background: #f8f9fc;
   border-radius: 10px;
   padding: 15px 10px 10px 20px;
   box-sizing: border-box;
-  flex: 1 1 0;
+  width: 470px;
+  flex: 0 0 454px;
   min-width: 0;
   position: relative;
+  height: 345px;
 }
 
 /* Title xoay dọc cạnh trục Y */
@@ -939,11 +880,14 @@ const linePointsStr = computed(() =>
   white-space: nowrap;
 }
 
-/* Chart layout */
+/* ===================== CHART AREA ===================== */
+
+/* Container cho trục Y + chart + scroll */
 .dr-chart {
   display: flex;
   gap: 8px;
-  align-items: stretch;
+  align-items: flex-start;
+  height: 230px; /* 210 chart + khoảng label */
 }
 
 /* Y axis labels */
@@ -954,45 +898,54 @@ const linePointsStr = computed(() =>
   font-size: 10px;
   padding-right: 4px;
   text-align: right;
+  height: 210px; /* khớp vùng chart */
 }
 
-/* Canvas area */
-.dr-chart-bars {
+/* Vùng chứa chart + scroll ngang */
+.dr-chart-scroll {
   flex: 1;
-  display: flex;
+  overflow-x: auto;
+  overflow-y: visible; /* để label batch tràn xuống dưới được */
+  height: 300px;       /* ⬅ khớp maxHeight trong JS */
+  position: relative;
+}
+
+/* Vùng bar + grid */
+.dr-chart-bars {
+  display: inline-flex;
+  width: max-content;
+  min-width: 100%;
   align-items: flex-end;
   gap: 4px;
   position: relative;
+
+  height: 211px;
   border-left: 1px solid #ccc;
   border-bottom: 1px solid #ccc;
   padding: 0px 4px;
-  height: 174px;
-  margin-bottom: 5px;
-  overflow: visible;
 
   background-image: repeating-linear-gradient(
     to top,
     rgba(0, 0, 0, 0.08) 0,
     rgba(0, 0, 0, 0.08) 1px,
     transparent 1px,
-    transparent 24px
+    transparent 30px
   );
   background-origin: content-box;
 }
 
-/* Bar wrapper */
+/* Bar wrapper – fix width để khi nhiều bar thì scroll (LEFT mặc định) */
 .dr-bar-wrapper {
-  flex: 1 1 0;
+  flex: 0 0 35px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 30px;
   position: relative;
 }
 
 /* Bars */
 .dr-bar {
-  width: 30%;
+  width: 60%;
   background: #00a0e9;
   border-radius: 4px 4px 0 0;
   position: relative;
@@ -1007,10 +960,10 @@ const linePointsStr = computed(() =>
   font-weight: 600;
 }
 
-/* Batch label left chart (xoay chéo) */
+/* Batch label left chart (xoay chéo, hiện lại dưới bar) */
 .dr-bar-label {
   position: absolute;
-  bottom: -38px;
+  bottom: -40px;
   left: 50%;
   transform: translateX(-60%) rotate(-50deg);
   transform-origin: top center;
@@ -1021,16 +974,34 @@ const linePointsStr = computed(() =>
 /* Batch label right chart (không xoay) */
 .dr-bar-labell {
   position: absolute;
-  bottom: -38px;
-  font-size: 13px;
+  bottom: -22px;
+  font-size: 11px;
   text-align: center;
 }
 
 /* X axis */
 .dr-x-axis-label {
   text-align: center;
-  margin-top: 60px;
+  margin-top: 76px;
   font-size: 12px;
+}
+
+/* ====== CHART PHẢI: cột to hơn, 4 cột / viewport ====== */
+
+.dr-chart-scroll-right {
+  /* có thể custom scrollbar riêng nếu muốn */
+}
+/* nếu muốn chắc chắn bên phải cũng full */
+.dr-chart-bars-right {
+  min-width: 100%;
+}
+.dr-chart-bars-right .dr-bar-wrapper {
+  /* mỗi cột rộng hơn → khoảng 4 cột trên 1 khung */
+  flex: 0 0 95px; /* chỉnh 85–110 tuỳ anh thấy đẹp */
+}
+
+.dr-chart-bars-right .dr-bar {
+  width: 40%; /* nhìn mập hơn chút */
 }
 
 /* Alarm History */
@@ -1206,5 +1177,23 @@ const linePointsStr = computed(() =>
 
 .time-btn.cancel {
   background: #f8d7da;
+}
+
+/* ====== ALIGN CHART KHI LÀ BATCH SUMMARY (LINE) ====== */
+.dr-chart-card--line {
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* nếu muốn dồn xuống dưới thì đổi thành flex-end */
+}
+
+/* Đẩy line chart xuống cho đỡ dính lên nóc, cao gần bằng vùng bar chart */
+.dr-chart-card--line .line-chart-box {
+  margin-top: 12px;
+  height: 210px;
+}
+
+/* Giảm khoảng cách trục X để tổng thể không bị tụt quá thấp */
+.dr-chart-card--line .dr-x-axis-label {
+  margin-top: 16px;
 }
 </style>
