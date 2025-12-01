@@ -46,6 +46,10 @@ const goTo = (path) => {
 </template>
 
 <style>
+* {
+  font-family: "Noto Sans TC", "Noto Sans", system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
 html, body, #app {
   height: 100%;
   margin: 0;

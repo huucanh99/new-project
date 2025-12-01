@@ -1,10 +1,23 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
+import { useI18n } from "@/languages/i18n";
+
+/* ====== i18n ====== */
+const i18n = useI18n();
+const { t } = i18n;
+// an toàn cho mọi kiểu cấu trúc i18n (string / ref / language…)
+const isChinese = computed(() => i18n.currentLang.value.startsWith("zh"));
+
 
 /* ====== Report & Date & Shift & Batch ID ====== */
-const reportOptions = ["Daily Total Report", "Shift Report", "Batch Summary"];
-const selectedReport = ref(reportOptions[0]);
+const reportOptions = [
+  { value: "Daily Total Report", labelKey: "dailyReport.dailyTotal" },
+  { value: "Shift Report",       labelKey: "dailyReport.shiftReport" },
+  { value: "Batch Summary",      labelKey: "dailyReport.batchSummary" },
+];
+
+const selectedReport = ref(reportOptions[0].value);
 
 // ====== Date: mặc định hôm nay ======
 const makeTodayStr = () => {
@@ -37,8 +50,12 @@ const openDatePicker = () => {
 };
 
 // ====== Shift (chỉ dùng cho Shift Report) ======
-const shiftOptions = ["Day Shift", "Afternoon Shift", "Noon Shift"];
-const selectedShift = ref(shiftOptions[0]);
+const shiftOptions = [
+  { value: "Day Shift",        labelKey: "dailyReport.dayShift" },
+  { value: "Afternoon Shift",  labelKey: "dailyReport.afternoonShift" },
+  { value: "Noon Shift",       labelKey: "dailyReport.nightShift" },
+];
+const selectedShift = ref(shiftOptions[0].value);
 
 // ====== Batch ID (cho Batch Summary) – lấy từ BE ======
 const batchIdOptions = ref([]);
@@ -71,7 +88,7 @@ const onTimeMouseDown = (part, e) => {
 const onTimeMouseMove = (e) => {
   if (!draggingPart.value) return;
   const dy = e.clientY - lastY.value;
-  const step = Math.floor(dy / -10); // kéo lên: dy âm -> step dương
+  const step = Math.floor(dy / -10);
   if (!step) return;
   lastY.value = e.clientY;
 
@@ -89,10 +106,10 @@ const onTimeMouseUp = () => {
 };
 
 /* ====== STATE NHẬN TỪ BACKEND ====== */
-const powerTimeData = ref([]);   // [{time, value}]
-const steelLineData = ref([]);   // [{time, value}]
-const powerBatches = ref([]);    // [{batch, time, value}]
-const steelBatches = ref([]);    // [{batch, time, value}]
+const powerTimeData = ref([]);
+const steelLineData = ref([]);
+const powerBatches = ref([]);
+const steelBatches = ref([]);
 const summary = ref({
   totalPower: 0,
   totalSteel: 0,
@@ -118,7 +135,6 @@ const loadDailyReport = async () => {
       reportType: selectedReport.value,
     });
 
-    // 👉 Batch Summary thì gửi thêm batchId
     if (selectedReport.value === "Batch Summary" && selectedBatchId.value) {
       params.append("batchId", selectedBatchId.value);
     }
@@ -138,11 +154,9 @@ const loadDailyReport = async () => {
     alarmRows.value       = data.alarmRows       || [];
     summary.value         = data.summary         || summary.value;
 
-    // ====== cập nhật Batch ID list (dùng data.batchIds từ BE) ======
     const newBatchIds = data.batchIds || [];
     batchIdOptions.value = newBatchIds;
 
-    // Nếu chưa chọn batch hoặc batch hiện tại không còn trong list → chọn batch đầu
     if (
       newBatchIds.length > 0 &&
       (!selectedBatchId.value || !newBatchIds.includes(selectedBatchId.value))
@@ -150,7 +164,6 @@ const loadDailyReport = async () => {
       selectedBatchId.value = newBatchIds[0];
     }
 
-    // batch đang chạy: lấy batch cuối cùng của powerBatches (nếu có)
     const last = (data.powerBatches || []).slice(-1)[0];
     batchInProgress.value = last ? last.batch : "";
   } catch (err) {
@@ -171,15 +184,14 @@ const powerChartData = computed(() => {
 
 const steelChartData = computed(() => {
   if (selectedReport.value === "Batch Summary") {
-    // line chart dùng steelLineData, bar không dùng nhưng cứ trả steelBatches cho chắc
     return steelBatches.value;
   }
   return steelBatches.value;
 });
 
 /* ====== Chart scale (bar) ====== */
-const maxHeight = 210;   // chiều cao vùng cột
-const maxValue = 35;     // max value
+const maxHeight = 210;
+const maxValue = 35;
 const barHeight = (v) => `${(v / maxValue) * maxHeight}px`;
 
 /* ====== Line chart cho Batch Summary (Steel Ball) ====== */
@@ -187,8 +199,7 @@ const lineChartWidth = 400;
 const lineChartHeight = 168;
 
 const steelLineTicks = [35, 30, 25, 20, 15, 10, 5, 0];
-// chừa lề hai bên cho khỏi bị cắt số đầu / số cuối
-const lineChartPaddingX = 12; // anh thích nhiều hơn thì tăng lên 16, 20...
+const lineChartPaddingX = 12;
 
 const valueToY = (v) =>
   lineChartHeight - (v / maxValue) * lineChartHeight;
@@ -197,11 +208,9 @@ const linePoints = computed(() => {
   const data = steelLineData.value;
   if (!data.length) return [];
 
-  // chiều ngang bên trong, đã trừ padding 2 bên
   const innerWidth = lineChartWidth - lineChartPaddingX * 2;
 
   if (data.length === 1) {
-    // 1 điểm thì cho nằm giữa
     return [
       {
         ...data[0],
@@ -215,19 +224,16 @@ const linePoints = computed(() => {
 
   return data.map((p, idx) => ({
     ...p,
-    x: lineChartPaddingX + idx * stepX, // 👈 luôn cách mép một đoạn
+    x: lineChartPaddingX + idx * stepX,
     y: valueToY(p.value),
   }));
 });
-
 
 const linePointsStr = computed(() =>
   linePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
 );
 
 /* ====== TOTAL & DISPLAY CHO STEEL / POWER ====== */
-
-// tổng Steel tiêu thụ
 const steelTotal = computed(() => {
   if (selectedReport.value === "Batch Summary") {
     return steelLineData.value.reduce(
@@ -241,7 +247,6 @@ const steelTotal = computed(() => {
   );
 });
 
-// tổng Power tiêu thụ
 const powerTotal = computed(() => {
   if (selectedReport.value === "Batch Summary") {
     return powerTimeData.value.reduce(
@@ -255,10 +260,8 @@ const powerTotal = computed(() => {
   );
 });
 
-// fake số tồn trước khi chạy (KG) – sau này có thể thay bằng summary.value.initialSteel
 const steelBaseBefore = ref(5000);
 
-// các string hiển thị đã format sẵn
 const steelBeforeDisplay = computed(() => steelBaseBefore.value.toFixed(2));
 
 const steelAfterDisplay = computed(() => {
@@ -278,7 +281,6 @@ onMounted(() => {
   loadDailyReport();
 });
 
-// đổi ngày, đổi giờ, đổi loại report, đổi batch -> gọi lại API
 watch(
   [selectedDate, timeHour, selectedReport, selectedBatchId],
   () => {
@@ -293,12 +295,11 @@ watch(
     <!-- TOP BAR -->
     <header class="dr-topbar">
       <div class="dr-top-left">
-        <!-- chỉ hiện khi KHÔNG phải Batch Summary -->
         <div
           class="dr-batch"
           v-if="selectedReport !== 'Batch Summary'"
         >
-          Batch in Progress :
+          {{ t("batchInProgress") }} :
           <span>{{ batchInProgress || "-" }}</span>
         </div>
       </div>
@@ -307,23 +308,25 @@ watch(
         <!-- Report select -->
         <div class="dr-select-group">
           <select v-model="selectedReport" class="dr-select-box dr-select">
-            <option v-for="opt in reportOptions" :key="opt" :value="opt">
-              {{ opt }}
+            <option
+              v-for="opt in reportOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ t(opt.labelKey) }}
             </option>
           </select>
         </div>
 
         <!-- Date + Shift / Batch ID -->
         <div class="dr-select-group">
-          <div class="dr-label">Date</div>
+          <div class="dr-label">{{ t("dateLabel") }}</div>
 
-          <!-- hiển thị date -->
           <div class="date-display" @click="openDatePicker">
             <span>{{ formattedDate }}</span>
             <span class="date-icon">▾</span>
           </div>
 
-          <!-- input date thật (ẩn) -->
           <input
             ref="dateInput"
             type="date"
@@ -331,20 +334,24 @@ watch(
             class="hidden-date-input"
           />
 
-          <!-- SHIFT SELECT: chỉ hiện khi chọn Shift Report -->
+          <!-- SHIFT -->
           <select
             v-if="selectedReport === 'Shift Report'"
             v-model="selectedShift"
             class="dr-select-box dr-shift-select"
           >
-            <option v-for="opt in shiftOptions" :key="opt" :value="opt">
-              {{ opt }}
+            <option
+              v-for="opt in shiftOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ t(opt.labelKey) }}
             </option>
           </select>
 
-          <!-- BATCH ID: chỉ hiện khi chọn Batch Summary -->
+          <!-- BATCH ID -->
           <template v-if="selectedReport === 'Batch Summary'">
-            <div class="dr-label dr-label-inline">Batch ID</div>
+            <div class="dr-label dr-label-inline">{{ t("batchId") }}</div>
             <select
               v-model="selectedBatchId"
               class="dr-select-box dr-batchid-select"
@@ -362,17 +369,17 @@ watch(
     <section class="dr-summary">
       <!-- Steel Ball -->
       <div class="dr-summary-card">
-        <div class="dr-summary-title">Steel Ball</div>
+        <div class="dr-summary-title">{{ t("dailyReport.steelBall") }}</div>
         <div class="dr-summary-content steel">
           <div class="dr-before-after">
             <div>
-              Before :<br />
+              {{ t("dailyReport.before") }} :<br />
               <strong style="padding-left: 20px; font-weight: 500">
                 {{ steelBeforeDisplay }} (KG)
               </strong>
             </div>
             <div>
-              After :<br />
+              {{ t("dailyReport.after") }} :<br />
               <strong style="padding-left: 20px; font-weight: 500">
                 {{ steelAfterDisplay }} (KG)
               </strong>
@@ -387,7 +394,7 @@ watch(
 
       <!-- Power -->
       <div class="dr-summary-card">
-        <div class="dr-summary-title">Power</div>
+        <div class="dr-summary-title">{{ t("power") }}</div>
         <div class="dr-summary-content center">
           <span class="big">{{ powerTotalDisplay }}</span>
           <span class="unitt">kW</span>
@@ -396,7 +403,7 @@ watch(
 
       <!-- Time -->
       <div class="dr-summary-card">
-        <div class="dr-summary-title">Time</div>
+        <div class="dr-summary-title">{{ t("dailyReport.time") }}</div>
 
         <div class="dr-summary-content time">
           <span
@@ -419,12 +426,17 @@ watch(
 
     <!-- BATCH REPORT -->
     <section class="dr-batch-panel">
-      <div class="dr-batch-title">Batch Report</div>
+      <div class="dr-batch-title">{{ t("dailyReport.batchReport") }}</div>
 
       <div class="dr-batch-content">
         <!-- LEFT CHART: POWER -->
         <div class="dr-chart-card">
-          <div class="dr-chart-title">Power (kW)</div>
+          <div
+            class="dr-chart-title"
+            :class="{ 'dr-chart-title--zh': isChinese }"
+          >
+            {{ t("power") }}
+          </div>
           <div class="dr-chart">
             <div class="dr-y-axis">
               <span>35</span>
@@ -437,7 +449,6 @@ watch(
               <span>0</span>
             </div>
 
-            <!-- ✅ scroll ngang ở đây -->
             <div class="dr-chart-scroll">
               <div class="dr-chart-bars">
                 <div
@@ -468,7 +479,7 @@ watch(
           </div>
 
           <div class="dr-x-axis-label">
-            {{ selectedReport === "Batch Summary" ? "TIME" : "Batch" }}
+            {{ selectedReport === "Batch Summary" ? t("timeAxis") : t("batchAxis") }}
           </div>
         </div>
 
@@ -477,16 +488,20 @@ watch(
           class="dr-chart-card"
           :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }"
         >
-          <!-- ========== BATCH SUMMARY: LINE CHART ========== -->
+          <!-- BATCH SUMMARY: LINE CHART -->
           <template v-if="selectedReport === 'Batch Summary'">
-            <div class="dr-chart-titlee">Steel Ball (KG)</div>
+            <div
+              class="dr-chart-titlee"
+              :class="{ 'dr-chart-titlee--zh': isChinese }"
+            >
+              {{ t("dailyReport.steelBallWithUnit") }}
+            </div>
 
             <div class="line-chart-box">
               <svg
                 class="line-chart-svg"
                 :viewBox="`0 -10 ${lineChartWidth} ${lineChartHeight + 10}`"
               >
-                <!-- grid ngang -->
                 <g v-for="tick in steelLineTicks" :key="tick">
                   <line
                     :x1="0"
@@ -498,13 +513,11 @@ watch(
                   />
                 </g>
 
-                <!-- polyline -->
                 <polyline
                   class="line-chart-path"
                   :points="linePointsStr"
                 />
 
-                <!-- điểm + label -->
                 <g v-for="(p, idx) in linePoints" :key="idx">
                   <circle
                     class="line-chart-point"
@@ -523,19 +536,23 @@ watch(
               </svg>
             </div>
 
-            <!-- HÀNG TIME NẰM DƯỚI KHUNG CHART -->
             <div class="line-chart-time-row">
               <span v-for="(p, idx) in steelLineData" :key="idx">
                 {{ p.time }}
               </span>
             </div>
 
-            <div class="dr-x-axis-label">TIME</div>
+            <div class="dr-x-axis-label">{{ t("timeAxis") }}</div>
           </template>
 
-          <!-- ========== CÁC REPORT KHÁC: BAR CHART ========== -->
+          <!-- CÁC REPORT KHÁC: BAR CHART -->
           <template v-else>
-            <div class="dr-chart-titlee">Steel Ball (KG)</div>
+            <div
+              class="dr-chart-titlee"
+              :class="{ 'dr-chart-titlee--zh': isChinese }"
+            >
+              {{ t("dailyReport.steelBallWithUnit") }}
+            </div>
             <div class="dr-chart">
               <div class="dr-y-axis">
                 <span>35</span>
@@ -548,7 +565,6 @@ watch(
                 <span>0</span>
               </div>
 
-              <!-- ✅ scroll ngang ở đây - RIGHT -->
               <div class="dr-chart-scroll dr-chart-scroll-right">
                 <div class="dr-chart-bars dr-chart-bars-right">
                   <div
@@ -565,7 +581,7 @@ watch(
               </div>
             </div>
 
-            <div class="dr-x-axis-label">Batch</div>
+            <div class="dr-x-axis-label">{{ t("batchAxis") }}</div>
           </template>
         </div>
       </div>
@@ -574,15 +590,15 @@ watch(
     <!-- Alarm History button -->
     <div class="dr-alarm-row">
       <button class="dr-alarm-btn" @click="showAlarmModal = true">
-        Alarm History
+        {{ t("alarmHistory") }}
       </button>
     </div>
 
-    <!-- ========= ALARM MODAL ========= -->
+    <!-- ALARM MODAL -->
     <div v-if="showAlarmModal" class="alarm-backdrop">
       <div class="alarm-modal">
         <div class="alarm-header">
-          <span class="alarm-title">Batch Report</span>
+          <span class="alarm-title">{{ t("dailyReport.batchReport") }}</span>
           <button class="alarm-close" @click="showAlarmModal = false">
             ✕
           </button>
@@ -592,12 +608,12 @@ watch(
           <table class="alarm-table">
             <thead>
               <tr>
-                <th style="width: 50px">No.</th>
-                <th>Type</th>
-                <th>Location</th>
-                <th>Start Time</th>
-                <th>End Time</th>
-                <th>Details</th>
+                <th style="width: 50px">{{ t("alarmNo") }}</th>
+                <th>{{ t("alarmType") }}</th>
+                <th>{{ t("alarmLocation") }}</th>
+                <th>{{ t("alarmStartTime") }}</th>
+                <th>{{ t("alarmEndTime") }}</th>
+                <th>{{ t("alarmDetails") }}</th>
               </tr>
             </thead>
             <tbody>
@@ -618,7 +634,6 @@ watch(
         </div>
       </div>
     </div>
-    <!-- ========= END MODAL ========= -->
   </div>
 </template>
 
@@ -682,31 +697,41 @@ watch(
   width: 70px;
 }
 
+/* ====== BASE SELECT BOX ====== */
 .dr-select-box {
+  box-sizing: border-box;
   min-width: 130px;
   border: 1px solid #000;
-  padding: 4px 10px;
+  padding: 0 10px;
   background: #fff;
+  font-size: 16px;
+  line-height: 1.3;
 }
 .dr-select-box:hover {
   cursor: pointer;
 }
 
-/* custom select cho Report */
+/* ====== MAIN REPORT SELECT (fix lệch chữ) ====== */
 .dr-select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  padding-right: 24px;
+
+  box-sizing: border-box;
+  width: 260px;
+  height: 40px;
+
+  line-height: 40px;
+  padding: 0 24px 0 10px;
+
+  font-size: 22px;
+  font-weight: 600;
+
   background-image: linear-gradient(45deg, transparent 50%, #000 50%),
     linear-gradient(135deg, #000 50%, transparent 50%);
   background-position: calc(100% - 16px) 50%, calc(100% - 10px) 50%;
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
-  width: 260px;
-  height: 40px;
-  font-size: 25px;
-  font-weight: 600;
 }
 
 /* Date display custom */
@@ -741,15 +766,20 @@ watch(
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+
+  height: 36px;
+  line-height: 36px;
+  padding: 0 24px 0 8px;
+
   margin-left: 4px;
-  padding-right: 24px;
+  font-size: 18px;
+  font-weight: 500;
+
   background-image: linear-gradient(45deg, transparent 50%, #000 50%),
     linear-gradient(135deg, #000 50%, transparent 50%);
   background-position: calc(100% - 16px) 50%, calc(100% - 10px) 50%;
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
-  font-size: 18px;
-  font-weight: 500;
 }
 
 /* Batch ID select */
@@ -757,14 +787,19 @@ watch(
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  padding-right: 24px;
+
+  height: 36px;
+  line-height: 36px;
+  padding: 0 24px 0 8px;
+
+  font-size: 18px;
+  font-weight: 500;
+
   background-image: linear-gradient(45deg, transparent 50%, #000 50%),
     linear-gradient(135deg, #000 50%, transparent 50%);
   background-position: calc(100% - 16px) 50%, calc(100% - 10px) 50%;
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
-  font-size: 18px;
-  font-weight: 500;
 }
 
 /* SUMMARY */
@@ -862,7 +897,7 @@ watch(
 .dr-chart-title {
   position: absolute;
   top: 50%;
-  left: -28px;
+  left: -31px;
   transform: translateY(-50%) rotate(-90deg);
   transform-origin: center;
   font-size: 14px;
@@ -872,7 +907,7 @@ watch(
 .dr-chart-titlee {
   position: absolute;
   top: 50%;
-  left: -36px;
+  left: -39px;
   transform: translateY(-50%) rotate(-90deg);
   transform-origin: center;
   font-size: 14px;
@@ -880,17 +915,23 @@ watch(
   white-space: nowrap;
 }
 
+/* Điều chỉnh khi tiếng Trung */
+.dr-chart-title--zh {
+  left: -22px !important;
+}
+.dr-chart-titlee--zh {
+  left: -22px !important ;
+}
+
 /* ===================== CHART AREA ===================== */
 
-/* Container cho trục Y + chart + scroll */
 .dr-chart {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  height: 230px; /* 210 chart + khoảng label */
+  height: 230px;
 }
 
-/* Y axis labels */
 .dr-y-axis {
   display: flex;
   flex-direction: column;
@@ -898,19 +939,17 @@ watch(
   font-size: 10px;
   padding-right: 4px;
   text-align: right;
-  height: 210px; /* khớp vùng chart */
+  height: 210px;
 }
 
-/* Vùng chứa chart + scroll ngang */
 .dr-chart-scroll {
   flex: 1;
   overflow-x: auto;
-  overflow-y: visible; /* để label batch tràn xuống dưới được */
-  height: 300px;       /* ⬅ khớp maxHeight trong JS */
+  overflow-y: visible;
+  height: 300px;
   position: relative;
 }
 
-/* Vùng bar + grid */
 .dr-chart-bars {
   display: inline-flex;
   width: max-content;
@@ -934,7 +973,6 @@ watch(
   background-origin: content-box;
 }
 
-/* Bar wrapper – fix width để khi nhiều bar thì scroll (LEFT mặc định) */
 .dr-bar-wrapper {
   flex: 0 0 35px;
   display: flex;
@@ -943,7 +981,6 @@ watch(
   position: relative;
 }
 
-/* Bars */
 .dr-bar {
   width: 60%;
   background: #00a0e9;
@@ -960,7 +997,7 @@ watch(
   font-weight: 600;
 }
 
-/* Batch label left chart (xoay chéo, hiện lại dưới bar) */
+/* Batch label left chart (xoay chéo) */
 .dr-bar-label {
   position: absolute;
   bottom: -40px;
@@ -986,22 +1023,17 @@ watch(
   font-size: 12px;
 }
 
-/* ====== CHART PHẢI: cột to hơn, 4 cột / viewport ====== */
-
-.dr-chart-scroll-right {
-  /* có thể custom scrollbar riêng nếu muốn */
-}
-/* nếu muốn chắc chắn bên phải cũng full */
+/* RIGHT CHART WIDTH */
+.dr-chart-scroll-right {}
 .dr-chart-bars-right {
   min-width: 100%;
 }
 .dr-chart-bars-right .dr-bar-wrapper {
-  /* mỗi cột rộng hơn → khoảng 4 cột trên 1 khung */
-  flex: 0 0 95px; /* chỉnh 85–110 tuỳ anh thấy đẹp */
+  flex: 0 0 95px;
 }
 
 .dr-chart-bars-right .dr-bar {
-  width: 40%; /* nhìn mập hơn chút */
+  width: 40%;
 }
 
 /* Alarm History */
@@ -1022,7 +1054,7 @@ watch(
   cursor: pointer;
 }
 
-/* ========== ALARM MODAL ========== */
+/* ALARM MODAL */
 .alarm-backdrop {
   position: fixed;
   inset: 0;
@@ -1066,14 +1098,13 @@ watch(
   cursor: pointer;
 }
 
-/* Table wrapper với scroll */
+/* Table wrapper */
 .alarm-table-wrapper {
   padding: 0;
   max-height: 65vh;
   overflow-y: auto;
 }
 
-/* Table */
 .alarm-table {
   width: 100%;
   border-collapse: collapse;
@@ -1105,7 +1136,7 @@ watch(
   padding: 12px 10px 12px 10px;
 }
 
-/* ====== CSS MỚI CHO LINE CHART ====== */
+/* ====== LINE CHART ====== */
 .line-chart-box {
   flex: 1;
   height: 174px;
@@ -1150,7 +1181,7 @@ watch(
   text-align: center;
 }
 
-/* ====== TIME EDIT MODE (VERSION 2) ====== */
+/* TIME EDIT MODE (VERSION 2) */
 .time-editing {
   gap: 6px;
 }
@@ -1179,20 +1210,18 @@ watch(
   background: #f8d7da;
 }
 
-/* ====== ALIGN CHART KHI LÀ BATCH SUMMARY (LINE) ====== */
+/* ALIGN CHART KHI LÀ BATCH SUMMARY (LINE) */
 .dr-chart-card--line {
   display: flex;
   flex-direction: column;
-  justify-content: center; /* nếu muốn dồn xuống dưới thì đổi thành flex-end */
+  justify-content: center;
 }
 
-/* Đẩy line chart xuống cho đỡ dính lên nóc, cao gần bằng vùng bar chart */
 .dr-chart-card--line .line-chart-box {
   margin-top: 12px;
   height: 210px;
 }
 
-/* Giảm khoảng cách trục X để tổng thể không bị tụt quá thấp */
 .dr-chart-card--line .dr-x-axis-label {
   margin-top: 16px;
 }

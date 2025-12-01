@@ -1,6 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
+import LanguageSwitch from "@/components/LanguageSwitch.vue";
+import { useI18n } from "@/languages/i18n";
+
+const { t, ts } = useI18n();
+
 
 /* ====== STATE DASHBOARD LẤY TỪ API ====== */
 const loading = ref(false);
@@ -152,8 +157,10 @@ onMounted(() => {
 
 
 <template>
-  <TimeClock class="sp-time" size="normal" align="left" />
-
+  <div class="top-header">
+    <TimeClock class="sp-time" size="normal" align="left" />
+    <LanguageSwitch />
+  </div>
   <div class="dashboard-content">
     <p v-if="errorMsg" style="color: red; margin-bottom: 4px">
       {{ errorMsg }}
@@ -166,10 +173,11 @@ onMounted(() => {
           :class="{ 'alert-button--active': alertIsActive }"
           @click="openAlarmModal"
         >
-          Alert
+          {{ t("alert") }}
         </button>
         <div class="batch">
-          Batch in Progress: <strong>{{ batchId || "----" }}</strong>
+          {{ t("batchInProgress") }}:
+          <strong>{{ batchId || "----" }}</strong>
         </div>
       </div>
     </header>
@@ -177,21 +185,21 @@ onMounted(() => {
     <!-- TOP PANELS -->
     <section class="top-panels">
       <div class="panel big">
-        <div class="panel-header">Steel Ball Weight</div>
+        <div class="panel-header">{{ t("steelBallWeight") }}</div>
         <div class="panel-value big-number">
           <span v-if="!loading">{{ steelBallWeightDisplay }}</span>
-          <span v-else>Loading...</span>
+          <span v-else>{{ t("loading") }}</span>
         </div>
       </div>
 
       <div class="panel big">
-        <div class="panel-header">Machine Status</div>
+        <div class="panel-header">{{ t("machineStatus") }}</div>
         <div class="status-box" :class="statusClass">
           <div class="status-icon">
             <font-awesome-icon icon="cog" />
           </div>
           <div class="status-text">
-            {{ statusText[machineStatus] || "Offline" }}
+            {{ ts(machineStatus) }}
           </div>
         </div>
       </div>
@@ -200,9 +208,11 @@ onMounted(() => {
     <!-- METRICS 1 -->
     <section class="metric-grid">
       <div class="metric-group">
-        <div class="metric-title title-of-all">Voltage (V)</div>
+        <div class="metric-title title-of-all">
+          {{ t("voltage") }}
+        </div>
         <div class="metric-card">
-          <div class="metric-label blue">Power Supply</div>
+          <div class="metric-label blue">{{ t("powerSupply") }}</div>
           <div class="metric-value">
             {{ formatNumber(voltage.powerSupply) }}
           </div>
@@ -210,16 +220,16 @@ onMounted(() => {
       </div>
 
       <div class="metric-group">
-        <div class="metric-title title-of-all">Rotation Speed (RPM)</div>
+        <div class="metric-title title-of-all">{{ t("rpm") }}</div>
         <div class="metric-row-2">
           <div class="metric-card">
-            <div class="metric-label">Impeller 1</div>
+            <div class="metric-label">{{ t("impeller1") }}</div>
             <div class="metric-value">
               {{ formatNumber(rpm.impeller1) }}
             </div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Impeller 2</div>
+            <div class="metric-label">{{ t("impeller2") }}</div>
             <div class="metric-value">
               {{ formatNumber(rpm.impeller2) }}
             </div>
@@ -231,16 +241,16 @@ onMounted(() => {
     <!-- METRICS 2 -->
     <section class="metric-grid2">
       <div class="metric-group">
-        <div class="metric-title title-of-all">Current (A)</div>
+        <div class="metric-title title-of-all">{{ t("current") }}</div>
         <div class="metric-row-4">
           <div class="metric-card">
-            <div class="metric-label blue">Power Supply</div>
+            <div class="metric-label blue">{{ t("powerSupply") }}</div>
             <div class="metric-value">
               {{ formatNumber(current.powerSupply) }}
             </div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Impeller 1</div>
+            <div class="metric-label">{{ t("impeller1") }}</div>
             <div
               class="metric-value"
               :class="{ danger: impeller1CurrentIsDanger }"
@@ -249,13 +259,13 @@ onMounted(() => {
             </div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Impeller 2</div>
+            <div class="metric-label">{{ t("impeller2") }}</div>
             <div class="metric-value">
               {{ formatNumber(current.impeller2) }}
             </div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Dust Collector</div>
+            <div class="metric-label">{{ t("dustCollector") }}</div>
             <div class="metric-value">
               {{ formatNumber(current.dustCollector) }}
             </div>
@@ -264,28 +274,28 @@ onMounted(() => {
       </div>
 
       <div class="metric-group">
-        <div class="metric-title title-of-all">Power (kW)</div>
+        <div class="metric-title title-of-all">{{ t("power") }}</div>
         <div class="metric-row-4">
           <div class="metric-card">
-            <div class="metric-label blue">Power Supply</div>
+            <div class="metric-label blue">{{ t("powerSupply") }}</div>
             <div class="metric-value">
               {{ formatNumber(power.powerSupply) }}
             </div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Impeller 1</div>
+            <div class="metric-label">{{ t("impeller1") }}</div>
             <div class="metric-value">
               {{ formatNumber(power.impeller1) }}
             </div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Impeller 2</div>
+            <div class="metric-label">{{ t("impeller2") }}</div>
             <div class="metric-value">
               {{ formatNumber(power.impeller2) }}
             </div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Dust Collector</div>
+            <div class="metric-label">{{ t("dustCollector") }}</div>
             <div class="metric-value">
               {{ formatNumber(power.dustCollector) }}
             </div>
@@ -298,7 +308,7 @@ onMounted(() => {
     <div v-if="showAlarmModal" class="alarm-backdrop">
       <div class="alarm-modal">
         <div class="alarm-header">
-          <span class="alarm-title">Alarm History</span>
+          <span class="alarm-title">{{ t("alarmHistory") }}</span>
           <button class="alarm-close" @click="showAlarmModal = false">✕</button>
         </div>
 
@@ -308,12 +318,12 @@ onMounted(() => {
           <table v-else class="alarm-table">
             <thead>
               <tr>
-                <th style="width: 50px">No.</th>
-                <th>Type</th>
-                <th>Location</th>
-                <th>Start Time</th>
-                <th>End Time</th>
-                <th>Details</th>
+                <th style="width: 50px">{{ t("alarmNo") }}</th>
+                <th>{{ t("alarmType") }}</th>
+                <th>{{ t("alarmLocation") }}</th>
+                <th>{{ t("alarmStartTime") }}</th>
+                <th>{{ t("alarmEndTime") }}</th>
+                <th>{{ t("alarmDetails") }}</th>
               </tr>
             </thead>
             <tbody>
@@ -340,6 +350,13 @@ onMounted(() => {
 
 
 <style scoped>
+.top-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .dashboard-content {
   display: flex;
   flex-direction: column;

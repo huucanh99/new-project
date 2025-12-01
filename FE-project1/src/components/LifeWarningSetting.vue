@@ -1,19 +1,85 @@
 <script setup>
 import { ref } from "vue";
+import { useI18n } from "@/languages/i18n"; // 👈 THÊM
 
+const { t } = useI18n();                    // 👈 THÊM
 const emit = defineEmits(["go-general"]);
 
 /* ==== Component Life Warning ==== */
+/* id giữ cho BE, nameKey dùng để dịch */
 const componentItems = ref([
-  { id: "impeller1", name: "Impeller 1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "impeller2", name: "Impeller 2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "blade1", name: "Blade 1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "blade2", name: "Blade 2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "claw1", name: "Claw 1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "claw2", name: "Claw 2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "clawTube1", name: "Claw Tube 1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "clawTube2", name: "Claw Tube 2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
-  { id: "filter", name: "Filter", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  {
+    id: "impeller1",
+    nameKey: "lifeWarning.impeller1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "impeller2",
+    nameKey: "lifeWarning.impeller2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "blade1",
+    nameKey: "lifeWarning.blade1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "blade2",
+    nameKey: "lifeWarning.blade2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "claw1",
+    nameKey: "lifeWarning.claw1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "claw2",
+    nameKey: "lifeWarning.claw2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "clawTube1",
+    nameKey: "lifeWarning.clawTube1",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "clawTube2",
+    nameKey: "lifeWarning.clawTube2",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
+  {
+    id: "filter",
+    nameKey: "lifeWarning.filter",
+    warningHours: null,
+    elapsedSeconds: 0,
+    running: false,
+    alarmed: false,
+  },
 ]);
 
 const formatHours = (seconds) => {
@@ -23,12 +89,13 @@ const formatHours = (seconds) => {
 
 const saveComponent = (item) => {
   const val = Number(item.warningHours);
+
   if (!item.warningHours && item.warningHours !== 0) {
-    alert("Please input warning hours before saving.");
+    alert(t("lifeWarning.validationRequired")); // 👈 i18n
     return;
   }
   if (Number.isNaN(val) || val <= 0) {
-    alert("Warning hours must be a positive number.");
+    alert(t("lifeWarning.validationPositive")); // 👈 i18n
     return;
   }
 
@@ -56,14 +123,15 @@ const backToGeneral = () => {
 };
 </script>
 
-
 <template>
   <section class="clws">
     <div class="clws-header">
       <button class="clws-back-btn" @click="backToGeneral">
-        ← Back to Alarm Settings
+        {{ t("lifeWarning.backButton") }}
       </button>
-      <h2 class="clws-title">Component Life Warning Setting</h2>
+      <h2 class="clws-title">
+        {{ t("lifeWarning.title") }}
+      </h2>
       <div class="clws-header-spacer"></div>
     </div>
 
@@ -74,25 +142,29 @@ const backToGeneral = () => {
         class="clws-card"
       >
         <div class="clws-left">
-          <div class="clws-name">{{ item.name }}</div>
+          <div class="clws-name">
+            {{ t(item.nameKey) }}
+          </div>
 
           <div class="clws-row">
-            <span>Accumulated Hours</span>
+            <span>{{ t("lifeWarning.accumulatedHours") }}</span>
             <span class="clws-acc">
               {{ formatHours(item.elapsedSeconds) }}
             </span>
-            <span>HR</span>
+            <span>{{ t("lifeWarning.unitHourShort") }}</span>
           </div>
 
           <div class="clws-row2">
-            <span>Warning Hours</span>
+            <span>{{ t("lifeWarning.warningHours") }}</span>
             <input
               v-model.number="item.warningHours"
               class="clws-input"
               type="number"
               min="0"
             />
-            <span style="margin-left: 25px;">HR</span>
+            <span style="margin-left: 25px;">
+              {{ t("lifeWarning.unitHourShort") }}
+            </span>
           </div>
         </div>
 
@@ -101,13 +173,13 @@ const backToGeneral = () => {
             class="clws-btn clws-btn-save"
             @click="saveComponent(item)"
           >
-            SAVE
+            {{ t("lifeWarning.save") }}
           </button>
           <button
             class="clws-btn clws-btn-reset"
             @click="resetComponent(item)"
           >
-            RESET
+            {{ t("lifeWarning.reset") }}
           </button>
         </div>
       </div>

@@ -1,11 +1,15 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
+import { useI18n } from "@/languages/i18n";
 
+// ==== i18n ====
+const { t } = useI18n();
 
 /* ==== Report type & date range ==== */
-const reportTypes = ["Daily Report", "Monthly Report", "Yearly Report"];
-const selectedReportType = ref(reportTypes[0]);
+// dùng key nội bộ: "daily" | "monthly" | "yearly"
+const reportTypes = ["daily", "monthly", "yearly"];
+const selectedReportType = ref("daily");
 
 /* --- Daily (YYYY-MM-DD) --- */
 const fromDate = ref("2025-09-01");
@@ -51,19 +55,19 @@ const toMonthDisplay = computed(() => formatMonth(toMonth.value));
 
 /* mở picker tương ứng cho Daily / Monthly */
 const openFromPicker = () => {
-  if (selectedReportType.value === "Daily Report") {
+  if (selectedReportType.value === "daily") {
     if (fromDateInput.value?.showPicker) fromDateInput.value.showPicker();
     else fromDateInput.value?.focus();
-  } else if (selectedReportType.value === "Monthly Report") {
+  } else if (selectedReportType.value === "monthly") {
     if (fromMonthInput.value?.showPicker) fromMonthInput.value.showPicker();
     else fromMonthInput.value?.focus();
   }
 };
 const openToPicker = () => {
-  if (selectedReportType.value === "Daily Report") {
+  if (selectedReportType.value === "daily") {
     if (toDateInput.value?.showPicker) toDateInput.value.showPicker();
     else toDateInput.value?.focus();
-  } else if (selectedReportType.value === "Monthly Report") {
+  } else if (selectedReportType.value === "monthly") {
     if (toMonthInput.value?.showPicker) toMonthInput.value.showPicker();
     else toMonthInput.value?.focus();
   }
@@ -184,13 +188,13 @@ const currentPath = computed(() => makeSmoothPath(currentData, maxYCurrent));
 /* polyline cho Steel Ball */
 const weightPoints = computed(() => makeLinePoints(weightData, maxYWeight));
 
-/* Fake power detail cards */
-const powerCards = [
-  { label: "Power Supply", value: "123.01" },
-  { label: "Impeller 1", value: "123.01" },
-  { label: "Impeller 2", value: "123.01" },
-  { label: "Dust Collector", value: "123.01" },
-];
+/* Fake power detail cards – label dùng i18n */
+const powerCards = computed(() => [
+  { label: t("powerSupply"), value: "123.01" },
+  { label: t("impeller1"), value: "123.01" },
+  { label: t("impeller2"), value: "123.01" },
+  { label: t("dustCollector"), value: "123.01" },
+]);
 
 /* ==== Download CSV (Excel mở được) ==== */
 const downloadCsv = () => {
@@ -230,22 +234,20 @@ const downloadCsv = () => {
 };
 </script>
 
+
 <template>
-   <!-- dùng đồng hồ real-time -->
+  <!-- dùng đồng hồ real-time -->
   <TimeClock class="sp-time" size="normal" align="left" />
   <div class="historical-page">
-   
     <!-- TOP BAR -->
     <header class="top-bar">
-      
-
       <div class="top-filters">
         <!-- Report type -->
         <div class="filter-group">
-          <span class="filter-label">Report Type</span>
+          <span class="filter-label">{{ t("historicalReportTypeLabel") }}</span>
           <select v-model="selectedReportType" class="select-box select-report">
-            <option v-for="t in reportTypes" :key="t" :value="t">
-              {{ t }}
+            <option v-for="type in reportTypes" :key="type" :value="type">
+              {{ t(`historical.reportType.${type}`) }}
             </option>
           </select>
         </div>
@@ -253,17 +255,14 @@ const downloadCsv = () => {
         <!-- Daily / Monthly -->
         <div
           class="filter-group"
-          v-if="
-            selectedReportType === 'Daily Report' ||
-            selectedReportType === 'Monthly Report'
-          "
+          v-if="selectedReportType === 'daily' || selectedReportType === 'monthly'"
         >
           <!-- FROM -->
           <div class="date-wrapper">
             <div class="date-display" @click="openFromPicker">
               <span>
                 {{
-                  selectedReportType === 'Daily Report'
+                  selectedReportType === 'daily'
                     ? fromDateDisplay
                     : fromMonthDisplay
                 }}
@@ -273,7 +272,7 @@ const downloadCsv = () => {
 
             <!-- input ẩn: Daily -->
             <input
-              v-if="selectedReportType === 'Daily Report'"
+              v-if="selectedReportType === 'daily'"
               ref="fromDateInput"
               type="date"
               v-model="fromDate"
@@ -296,7 +295,7 @@ const downloadCsv = () => {
             <div class="date-display" @click="openToPicker">
               <span>
                 {{
-                  selectedReportType === 'Daily Report'
+                  selectedReportType === 'daily'
                     ? toDateDisplay
                     : toMonthDisplay
                 }}
@@ -306,7 +305,7 @@ const downloadCsv = () => {
 
             <!-- input ẩn: Daily -->
             <input
-              v-if="selectedReportType === 'Daily Report'"
+              v-if="selectedReportType === 'daily'"
               ref="toDateInput"
               type="date"
               v-model="toDate"
@@ -354,9 +353,9 @@ const downloadCsv = () => {
 
         <!-- Search + CSV -->
         <div class="filter-group buttons-group">
-          <button class="btn btn-search">Search</button>
+          <button class="btn btn-search">{{ t("search") }}</button>
           <button class="btn btn-csv" @click="downloadCsv">
-            Download CSV
+            {{ t("downloadCsv") }}
           </button>
         </div>
       </div>
@@ -365,15 +364,15 @@ const downloadCsv = () => {
     <!-- SUMMARY ROW -->
     <section class="summary-row">
       <div class="summary-card">
-        <div class="summary-header">Steel Ball</div>
+        <div class="summary-header">{{ t("dailyReport.steelBall") }}</div>
         <div class="summary-body steel-summary">
           <div class="before-after">
             <div>
-              Before :<br />
+              {{ t("dailyReport.before") }} :<br />
               <strong>1123.45(KG)</strong>
             </div>
             <div>
-              After :<br />
+              {{ t("dailyReport.after") }} :<br />
               <strong>1000(KG)</strong>
             </div>
           </div>
@@ -385,7 +384,7 @@ const downloadCsv = () => {
       </div>
 
       <div class="summary-card">
-        <div class="summary-header">Power</div>
+        <div class="summary-header">{{ t("power") }}</div>
         <div class="summary-body">
           <div class="summary-main center-main">
             <span class="summary-value">{{ powerTotal.toFixed(2) }}</span>
@@ -395,7 +394,7 @@ const downloadCsv = () => {
       </div>
 
       <div class="summary-card">
-        <div class="summary-header">Time</div>
+        <div class="summary-header">{{ t("dailyReport.time") }}</div>
         <div class="summary-body">
           <div class="summary-main center-main">
             <span class="summary-value">{{ timeHour }}</span>
@@ -413,7 +412,7 @@ const downloadCsv = () => {
     <section class="charts-row">
       <!-- Current (A) -->
       <div class="chart-card">
-        <div class="chart-title">Current (A)</div>
+        <div class="chart-title">{{ t("current") }}</div>
         <div class="chart-inner">
           <div class="chart-area">
             <svg
@@ -469,7 +468,7 @@ const downloadCsv = () => {
 
       <!-- Steel Ball Weight -->
       <div class="chart-card">
-        <div class="chart-title">Steel Ball Weight</div>
+        <div class="chart-title">{{ t("steelBallWeight") }}</div>
         <div class="chart-inner">
           <div class="chart-area">
             <svg
@@ -526,7 +525,7 @@ const downloadCsv = () => {
 
     <!-- POWER DETAIL ROW -->
     <section class="power-row">
-      <h2 class="power-row-title">Power</h2>
+      <h2 class="power-row-title">{{ t("power") }}</h2>
       <div class="power-cards">
         <div v-for="c in powerCards" :key="c.label" class="power-card">
           <div class="power-label">{{ c.label }}</div>
@@ -536,6 +535,7 @@ const downloadCsv = () => {
     </section>
   </div>
 </template>
+
 
 <style scoped>
 /* giữ nguyên toàn bộ CSS của anh */

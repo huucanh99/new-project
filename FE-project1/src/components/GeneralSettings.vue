@@ -3,11 +3,20 @@ import { ref, computed } from "vue";
 import upIcon from "@/assets/arrow_up.png";
 import downIcon from "@/assets/arrow_down.png";
 
+import { useI18n } from "@/languages/i18n"; // 👈 THÊM
+const { t } = useI18n();                    // 👈 THÊM
+
 const emit = defineEmits(["go-life"]);
 
 /* ==== Steel ball type ==== */
-const steelBallTypes = ["Type A", "Type B", "Type C"];
-const selectedSteelBallType = ref(steelBallTypes[0]);
+/* value giữ nguyên cho BE, labelKey dùng để dịch */
+const steelBallTypes = [
+  { value: "Type A", labelKey: "generalSettings.typeA" },
+  { value: "Type B", labelKey: "generalSettings.typeB" },
+  { value: "Type C", labelKey: "generalSettings.typeC" },
+];
+
+const selectedSteelBallType = ref(steelBallTypes[0].value);
 
 /* ==== Alarm values ==== */
 const alarms = ref({
@@ -51,7 +60,7 @@ const saveSteelType = () => {
 
 const saveAlarms = () => {
   if (isAlarmInvalid.value) {
-    alert("Upper limit must be greater than lower limit.");
+    alert(t("generalSettings.invalidRange")); // 👈 Dùng i18n
     return;
   }
   console.log("Save alarms:", alarms.value);
@@ -68,15 +77,25 @@ const goToLifeWarning = () => {
     <section class="sp-card sp-card-type">
       <div class="sp-card-header sp-card-header--centered">
         <div class="sp-header-spacer"></div>
-        <h2 class="sp-title">Steel Ball Type Settings</h2>
-        <button class="sp-btn" @click="saveSteelType">Save Settings</button>
+        <h2 class="sp-title">
+          {{ t("generalSettings.steelTypeTitle") }}
+        </h2>
+        <button class="sp-btn" @click="saveSteelType">
+          {{ t("generalSettings.saveButton") }}
+        </button>
       </div>
 
       <div class="sp-card-body sp-type-row">
-        <div class="sp-type-label">Steel Ball Type</div>
+        <div class="sp-type-label">
+          {{ t("generalSettings.steelBallType") }}
+        </div>
         <select v-model="selectedSteelBallType" class="sp-select">
-          <option v-for="t in steelBallTypes" :key="t" :value="t">
-            {{ t }}
+          <option
+            v-for="opt in steelBallTypes"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ t(opt.labelKey) }}
           </option>
         </select>
       </div>
@@ -86,20 +105,28 @@ const goToLifeWarning = () => {
     <section class="sp-card sp-card-alarm">
       <div class="sp-card-header sp-card-header--centered">
         <div class="sp-header-spacer"></div>
-        <h2 class="sp-title">Alarm Settings</h2>
-        <button class="sp-btn" @click="saveAlarms">Save Settings</button>
+        <h2 class="sp-title">
+          {{ t("generalSettings.alarmTitle") }}
+        </h2>
+        <button class="sp-btn" @click="saveAlarms">
+          {{ t("generalSettings.saveButton") }}
+        </button>
       </div>
 
       <div class="sp-card-body sp-alarm-grid">
         <!-- Steel Ball -->
         <div class="sp-row">
-          <div class="sp-row-title">Steel Ball Weight Alert</div>
+          <div class="sp-row-title">
+            {{ t("generalSettings.steelWeightAlert") }}
+          </div>
 
           <div class="sp-row-limits">
             <!-- Upper -->
             <div class="sp-limit">
               <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
-              <span class="sp-limit-text">Upper Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.upperLimit") }}
+              </span>
               <input
                 v-model.number="alarms.steelWeightUpper"
                 class="sp-input"
@@ -111,7 +138,9 @@ const goToLifeWarning = () => {
             <!-- Lower -->
             <div class="sp-limit">
               <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
-              <span class="sp-limit-text">Lower Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.lowerLimit") }}
+              </span>
               <input
                 v-model.number="alarms.steelWeightLower"
                 class="sp-input"
@@ -124,12 +153,16 @@ const goToLifeWarning = () => {
 
         <!-- Current -->
         <div class="sp-row">
-          <div class="sp-row-title">Current Abnormal Alert</div>
+          <div class="sp-row-title">
+            {{ t("generalSettings.currentAlert") }}
+          </div>
 
           <div class="sp-row-limits">
             <div class="sp-limit">
               <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
-              <span class="sp-limit-text">Upper Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.upperLimit") }}
+              </span>
               <input
                 v-model.number="alarms.currentUpper"
                 class="sp-input"
@@ -140,7 +173,9 @@ const goToLifeWarning = () => {
 
             <div class="sp-limit">
               <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
-              <span class="sp-limit-text">Lower Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.lowerLimit") }}
+              </span>
               <input
                 v-model.number="alarms.currentLower"
                 class="sp-input"
@@ -153,12 +188,16 @@ const goToLifeWarning = () => {
 
         <!-- Voltage -->
         <div class="sp-row">
-          <div class="sp-row-title">Voltage Abnormal Alert</div>
+          <div class="sp-row-title">
+            {{ t("generalSettings.voltageAlert") }}
+          </div>
 
           <div class="sp-row-limits">
             <div class="sp-limit">
               <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
-              <span class="sp-limit-text">Upper Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.upperLimit") }}
+              </span>
               <input
                 v-model.number="alarms.voltageUpper"
                 class="sp-input"
@@ -169,7 +208,9 @@ const goToLifeWarning = () => {
 
             <div class="sp-limit">
               <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
-              <span class="sp-limit-text">Lower Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.lowerLimit") }}
+              </span>
               <input
                 v-model.number="alarms.voltageLower"
                 class="sp-input"
@@ -182,12 +223,16 @@ const goToLifeWarning = () => {
 
         <!-- Power -->
         <div class="sp-row">
-          <div class="sp-row-title">Power Abnormal Alert</div>
+          <div class="sp-row-title">
+            {{ t("generalSettings.powerAlert") }}
+          </div>
 
           <div class="sp-row-limits">
             <div class="sp-limit">
               <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
-              <span class="sp-limit-text">Upper Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.upperLimit") }}
+              </span>
               <input
                 v-model.number="alarms.powerUpper"
                 class="sp-input"
@@ -198,7 +243,9 @@ const goToLifeWarning = () => {
 
             <div class="sp-limit">
               <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
-              <span class="sp-limit-text">Lower Limit</span>
+              <span class="sp-limit-text">
+                {{ t("generalSettings.lowerLimit") }}
+              </span>
               <input
                 v-model.number="alarms.powerLower"
                 class="sp-input"
@@ -214,7 +261,7 @@ const goToLifeWarning = () => {
     <!-- Nút đi qua Component Life Warning -->
     <div class="sp-switch">
       <button class="sp-btn" @click="goToLifeWarning">
-        Go to Component Life Warning
+        {{ t("generalSettings.goLifeWarning") }}
       </button>
     </div>
   </div>
