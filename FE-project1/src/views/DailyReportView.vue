@@ -694,7 +694,7 @@ watch(
 .dr-label-inline {
   padding-left: 15px;
   padding-right: 5px;
-  width: 70px;
+  width: 72px;
 }
 
 /* ====== BASE SELECT BOX ====== */

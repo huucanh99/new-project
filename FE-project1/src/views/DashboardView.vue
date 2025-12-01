@@ -6,7 +6,6 @@ import { useI18n } from "@/languages/i18n";
 
 const { t, ts } = useI18n();
 
-
 /* ====== STATE DASHBOARD LẤY TỪ API ====== */
 const loading = ref(false);
 const errorMsg = ref("");
@@ -50,10 +49,14 @@ const statusText = {
 
 const statusClass = computed(() => {
   switch (machineStatus.value) {
-    case "operating": return "status-green";
-    case "standby": return "status-yellow";
-    case "abnormal": return "status-red";
-    default: return "status-gray";
+    case "operating":
+      return "status-green";
+    case "standby":
+      return "status-yellow";
+    case "abnormal":
+      return "status-red";
+    default:
+      return "status-gray";
   }
 });
 
@@ -68,14 +71,16 @@ const formatNumber = (val) => {
 };
 
 const steelBallWeightDisplay = computed(() =>
-  steelBallWeight.value == null ? "--" : Number(steelBallWeight.value).toFixed(2)
+  steelBallWeight.value == null
+    ? "--"
+    : Number(steelBallWeight.value).toFixed(2)
 );
 
-/* ====== CURRENT DANGER ====== */
-const impeller1CurrentIsDanger = computed(() => {
-  const val = current.value.impeller1;
-  return val != null && Number(val) >= 500;
-});
+/* ====== DANGER CHECK (> 500) ====== */
+/* Dùng chung cho tất cả ô số (trừ Steel Ball & Machine Status) */
+const isDanger = (val) => {
+  return val != null && Number(val) > 500;
+};
 
 /* ====== FETCH DASHBOARD (NO LOGIN) ====== */
 const fetchDashboard = async () => {
@@ -96,8 +101,7 @@ const fetchDashboard = async () => {
 
     batchId.value = data.batchId || "";
     machineStatus.value = data.machineStatus || "offline";
-    steelBallWeight.value = data.steelBallWeight ?? null;
-
+    steelBallWeight.value = data.steelBallTotal ?? data.steelBallWeight ?? null;
     voltage.value = { powerSupply: data.voltage?.powerSupply ?? null };
     rpm.value = {
       impeller1: data.rpm?.impeller1 ?? null,
@@ -154,7 +158,6 @@ onMounted(() => {
   fetchDashboard();
 });
 </script>
-
 
 <template>
   <div class="top-header">
@@ -213,7 +216,7 @@ onMounted(() => {
         </div>
         <div class="metric-card">
           <div class="metric-label blue">{{ t("powerSupply") }}</div>
-          <div class="metric-value">
+          <div class="metric-value" :class="{ danger: isDanger(voltage.powerSupply) }">
             {{ formatNumber(voltage.powerSupply) }}
           </div>
         </div>
@@ -224,13 +227,13 @@ onMounted(() => {
         <div class="metric-row-2">
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller1") }}</div>
-            <div class="metric-value">
+            <div class="metric-value" :class="{ danger: isDanger(rpm.impeller1) }">
               {{ formatNumber(rpm.impeller1) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller2") }}</div>
-            <div class="metric-value">
+            <div class="metric-value" :class="{ danger: isDanger(rpm.impeller2) }">
               {{ formatNumber(rpm.impeller2) }}
             </div>
           </div>
@@ -245,7 +248,7 @@ onMounted(() => {
         <div class="metric-row-4">
           <div class="metric-card">
             <div class="metric-label blue">{{ t("powerSupply") }}</div>
-            <div class="metric-value">
+            <div class="metric-value" :class="{ danger: isDanger(current.powerSupply) }">
               {{ formatNumber(current.powerSupply) }}
             </div>
           </div>
@@ -253,20 +256,23 @@ onMounted(() => {
             <div class="metric-label">{{ t("impeller1") }}</div>
             <div
               class="metric-value"
-              :class="{ danger: impeller1CurrentIsDanger }"
+              :class="{ danger: isDanger(current.impeller1) }"
             >
               {{ formatNumber(current.impeller1) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller2") }}</div>
-            <div class="metric-value">
+            <div class="metric-value" :class="{ danger: isDanger(current.impeller2) }">
               {{ formatNumber(current.impeller2) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("dustCollector") }}</div>
-            <div class="metric-value">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(current.dustCollector) }"
+            >
               {{ formatNumber(current.dustCollector) }}
             </div>
           </div>
@@ -278,25 +284,28 @@ onMounted(() => {
         <div class="metric-row-4">
           <div class="metric-card">
             <div class="metric-label blue">{{ t("powerSupply") }}</div>
-            <div class="metric-value">
+            <div class="metric-value" :class="{ danger: isDanger(power.powerSupply) }">
               {{ formatNumber(power.powerSupply) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller1") }}</div>
-            <div class="metric-value">
+            <div class="metric-value" :class="{ danger: isDanger(power.impeller1) }">
               {{ formatNumber(power.impeller1) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller2") }}</div>
-            <div class="metric-value">
+            <div class="metric-value" :class="{ danger: isDanger(power.impeller2) }">
               {{ formatNumber(power.impeller2) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("dustCollector") }}</div>
-            <div class="metric-value">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(power.dustCollector) }"
+            >
               {{ formatNumber(power.dustCollector) }}
             </div>
           </div>
@@ -344,10 +353,8 @@ onMounted(() => {
         </div>
       </div>
     </div>
-
   </div>
 </template>
-
 
 <style scoped>
 .top-header {
@@ -393,9 +400,15 @@ onMounted(() => {
 }
 
 @keyframes blink-alert {
-  0% { background: #e53935; }
-  50% { background: #ff867c; }
-  100% { background: #e53935; }
+  0% {
+    background: #e53935;
+  }
+  50% {
+    background: #ff867c;
+  }
+  100% {
+    background: #e53935;
+  }
 }
 
 .batch {
