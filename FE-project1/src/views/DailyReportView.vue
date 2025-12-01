@@ -9,7 +9,6 @@ const { t } = i18n;
 // an toàn cho mọi kiểu cấu trúc i18n (string / ref / language…)
 const isChinese = computed(() => i18n.currentLang.value.startsWith("zh"));
 
-
 /* ====== Report & Date & Shift & Batch ID ====== */
 const reportOptions = [
   { value: "Daily Total Report", labelKey: "dailyReport.dailyTotal" },
@@ -37,7 +36,7 @@ const formattedDate = computed(() => {
   if (Number.isNaN(d.getTime())) return "";
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate(), 10).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy} / ${mm} / ${dd}`;
 });
 
@@ -50,12 +49,13 @@ const openDatePicker = () => {
 };
 
 // ====== Shift (chỉ dùng cho Shift Report) ======
+// Mapping giống BE: 1 = Night, 2 = Day, 3 = Afternoon
 const shiftOptions = [
-  { value: "Day Shift",        labelKey: "dailyReport.dayShift" },
-  { value: "Afternoon Shift",  labelKey: "dailyReport.afternoonShift" },
-  { value: "Noon Shift",       labelKey: "dailyReport.nightShift" },
+  { value: 2, labelKey: "dailyReport.dayShift" },        // Day Shift
+  { value: 3, labelKey: "dailyReport.afternoonShift" },  // Afternoon Shift
+  { value: 1, labelKey: "dailyReport.nightShift" },      // Night Shift
 ];
-const selectedShift = ref(shiftOptions[0].value);
+const selectedShift = ref(shiftOptions[0].value); // default: Day Shift (2)
 
 // ====== Batch ID (cho Batch Summary) – lấy từ BE ======
 const batchIdOptions = ref([]);
@@ -135,8 +135,14 @@ const loadDailyReport = async () => {
       reportType: selectedReport.value,
     });
 
+    // gửi batchId khi Batch Summary
     if (selectedReport.value === "Batch Summary" && selectedBatchId.value) {
       params.append("batchId", selectedBatchId.value);
+    }
+
+    // gửi shift khi Shift Report
+    if (selectedReport.value === "Shift Report" && selectedShift.value != null) {
+      params.append("shift", String(selectedShift.value)); // 1 / 2 / 3
     }
 
     const res = await fetch(`${API_BASE}/api/daily-report?${params.toString()}`);
@@ -272,7 +278,7 @@ const steelAfterDisplay = computed(() => {
 const steelTotalDisplay = computed(() => steelTotal.value.toFixed(2));
 const powerTotalDisplay = computed(() => powerTotal.value.toFixed(2));
 
-/* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI DATE / TIME / REPORT / BATCH ====== */
+/* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI DATE / TIME / REPORT / BATCH / SHIFT ====== */
 onMounted(() => {
   const now = new Date();
   timeHour.value = now.getHours();
@@ -282,7 +288,7 @@ onMounted(() => {
 });
 
 watch(
-  [selectedDate, timeHour, selectedReport, selectedBatchId],
+  [selectedDate, timeHour, selectedReport, selectedBatchId, selectedShift],
   () => {
     loadDailyReport();
   }
@@ -636,6 +642,11 @@ watch(
     </div>
   </div>
 </template>
+
+<style scoped>
+/* (phần CSS giữ nguyên như file anh gửi, em không đụng) */
+</style>
+
 
 <style scoped>
 .daily-report {
