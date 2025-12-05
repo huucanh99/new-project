@@ -6,7 +6,6 @@ import { useI18n } from "@/languages/i18n";
 /* ====== i18n ====== */
 const i18n = useI18n();
 const { t } = i18n;
-// an toàn cho mọi kiểu cấu trúc i18n (string / ref / language…)
 const isChinese = computed(() => i18n.currentLang.value.startsWith("zh"));
 
 /* ====== Report & Date & Shift & Batch ID ====== */
@@ -49,7 +48,6 @@ const openDatePicker = () => {
 };
 
 // ====== Shift (chỉ dùng cho Shift Report) ======
-// Mapping giống BE: 1 = Night, 2 = Day, 3 = Afternoon
 const shiftOptions = [
   { value: 2, labelKey: "dailyReport.dayShift" },        // Day Shift
   { value: 3, labelKey: "dailyReport.afternoonShift" },  // Afternoon Shift
@@ -106,9 +104,9 @@ const onTimeMouseUp = () => {
 };
 
 /* ====== STATE NHẬN TỪ BACKEND ====== */
-const powerTimeData = ref([]);
-const steelLineData = ref([]);
-const powerBatches = ref([]);
+const powerTimeData = ref([]);   // raw power theo time (Batch Summary) {time, value}
+const steelLineData = ref([]);   // raw steel theo time (Batch Summary) {time, value}
+const powerBatches = ref([]);    // theo batch (Daily/Shift)
 const steelBatches = ref([]);
 const summary = ref({
   totalPower: 0,
@@ -122,6 +120,13 @@ const loading = ref(false);
 const error = ref("");
 
 const API_BASE = "http://localhost:4000";
+
+/* ====== helper format số (làm tròn FE) ====== */
+const format2 = (value) => {
+  const n = Number(value);
+  if (Number.isNaN(n)) return "0.00";
+  return n.toFixed(2);
+};
 
 /* ====== GỌI API /api/daily-report ====== */
 const loadDailyReport = async () => {
@@ -153,12 +158,18 @@ const loadDailyReport = async () => {
 
     const data = await res.json();
 
-    powerTimeData.value   = data.powerTimeData   || [];
-    steelLineData.value   = data.steelLineData   || [];
-    powerBatches.value    = data.powerBatches    || [];
-    steelBatches.value    = data.steelBatches    || [];
-    alarmRows.value       = data.alarmRows       || [];
-    summary.value         = data.summary         || summary.value;
+    // ====== POWER time-series (Batch Summary) ======
+    powerTimeData.value = data.powerTimeData || [];
+    // ====== STEEL time-series (Batch Summary) ======
+    steelLineData.value = data.steelLineData || [];
+    
+
+    // ====== BATCH LEVEL (Daily / Shift) ======
+    powerBatches.value = data.powerBatches || [];
+    steelBatches.value = data.steelBatches || [];
+
+    alarmRows.value = data.alarmRows || [];
+    summary.value = data.summary || summary.value;
 
     const newBatchIds = data.batchIds || [];
     batchIdOptions.value = newBatchIds;
@@ -180,38 +191,113 @@ const loadDailyReport = async () => {
   }
 };
 
-/* ====== DATA CHO CHART TỪ STATE ====== */
-const powerChartData = computed(() => {
-  if (selectedReport.value === "Batch Summary") {
-    return powerTimeData.value;
-  }
-  return powerBatches.value;
-});
-
-const steelChartData = computed(() => {
-  if (selectedReport.value === "Batch Summary") {
-    return steelBatches.value;
-  }
-  return steelBatches.value;
-});
+/* ====== DATA CHO BAR CHART (Daily / Shift) ====== */
+const powerChartData = computed(() => powerBatches.value);
+const steelChartData = computed(() => steelBatches.value);
 
 /* ====== Chart scale (bar) ====== */
 const maxHeight = 210;
-const maxValue = 35;
-const barHeight = (v) => `${(v / maxValue) * maxHeight}px`;
+const maxBarValue = 35;
+const barHeight = (v) => `${(v / maxBarValue) * maxHeight}px`;
 
-/* ====== Line chart cho Batch Summary (Steel Ball) ====== */
+/* ====== Interval cho Batch Summary (Power & Steel) ====== */
+const intervalOptions = [
+  { value: 10, label: "10 min" },
+  { value: 20, label: "20 min" },
+];
+
+// tách riêng 2 nút 10m/20m cho 2 chart
+const selectedPowerInterval = ref(10); // left chart
+const selectedSteelInterval = ref(10); // right chart
+
+/* ====== Line chart chung ====== */
 const lineChartWidth = 400;
 const lineChartHeight = 168;
-
-const steelLineTicks = [35, 30, 25, 20, 15, 10, 5, 0];
 const lineChartPaddingX = 12;
+const lineXOffset = 15; // đẩy line qua phải một chút cho đỡ chồng
 
-const valueToY = (v) =>
-  lineChartHeight - (v / maxValue) * lineChartHeight;
+const clampX = (x) => Math.min(lineChartWidth - 10, x);
 
-const linePoints = computed(() => {
-  const data = steelLineData.value;
+/* ====== TICKS DEFAULT ====== */
+const defaultTicks = [35, 30, 25, 20, 15, 10, 5, 0];
+
+/* ================= POWER LINE (Batch Summary) ================= */
+
+/* AGGREGATE POWER THEO INTERVAL */
+const aggregatedPowerTimeData = computed(() => {
+  if (selectedReport.value !== "Batch Summary") return [];
+
+  const raw = powerTimeData.value;
+  const interval = selectedPowerInterval.value;
+  if (!raw.length || !interval) return [];
+
+  const buckets = {}; // { "HH:MM": sumPower }
+
+  raw.forEach((p) => {
+    const [hStr, mStr] = (p.time || "").split(":");
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (Number.isNaN(h) || Number.isNaN(m)) return;
+
+    const total = h * 60 + m;
+    const bucketStart = Math.floor(total / interval) * interval;
+    const bh = String(Math.floor(bucketStart / 60)).padStart(2, "0");
+    const bm = String(bucketStart % 60).padStart(2, "0");
+    const key = `${bh}:${bm}`;
+
+    if (!buckets[key]) buckets[key] = 0;
+    buckets[key] += Number(p.value ?? p.power_kw ?? 0) || 0;
+  });
+
+  return Object.keys(buckets)
+    .sort()
+    .map((time) => ({
+      time,
+      value: Number(buckets[time].toFixed(2)),
+    }));
+});
+
+/* MAX & TICKS CHO POWER Y-AXIS (Batch Summary) */
+const powerMaxValue = computed(() => {
+  if (selectedReport.value !== "Batch Summary") return 35;
+
+  let baseMax = 14; // default cho 10 phút
+  if (selectedPowerInterval.value === 20) baseMax = 28;
+
+  const maxData = Math.max(
+    0,
+    ...aggregatedPowerTimeData.value.map((p) => p.value || 0)
+  );
+
+  return Math.max(baseMax, Math.ceil(maxData));
+});
+
+const powerLineTicks = computed(() => {
+  if (selectedReport.value !== "Batch Summary") {
+    return defaultTicks;
+  }
+
+  const maxV = powerMaxValue.value;
+  const step = maxV / 7; // 8 tick (7 khoảng)
+  const ticks = [];
+  for (let i = 7; i >= 0; i--) {
+    ticks.push(Math.round(step * i));
+  }
+  return ticks;
+});
+
+const powerValueToY = (v) =>
+  lineChartHeight - (v / powerMaxValue.value) * lineChartHeight;
+
+/* ZOOM CHO POWER LINE (Batch Summary) */
+const powerZoom = ref(1);
+const minPowerZoom = 0.5;
+const maxPowerZoom = 5;
+
+const powerSvgWidth = computed(() => lineChartWidth * powerZoom.value);
+
+const powerLinePoints = computed(() => {
+  const data = aggregatedPowerTimeData.value;
   if (!data.length) return [];
 
   const innerWidth = lineChartWidth - lineChartPaddingX * 2;
@@ -220,35 +306,197 @@ const linePoints = computed(() => {
     return [
       {
         ...data[0],
-        x: lineChartWidth / 2,
-        y: valueToY(data[0].value),
+        x: clampX(lineChartWidth / 2 + lineXOffset),
+        y: powerValueToY(data[0].value),
       },
     ];
   }
 
   const stepX = innerWidth / (data.length - 1);
 
-  return data.map((p, idx) => ({
-    ...p,
-    x: lineChartPaddingX + idx * stepX,
-    y: valueToY(p.value),
-  }));
+  return data.map((p, idx) => {
+    const rawX = lineChartPaddingX + idx * stepX + lineXOffset;
+    return {
+      ...p,
+      x: clampX(rawX),
+      y: powerValueToY(p.value),
+    };
+  });
 });
 
-const linePointsStr = computed(() =>
-  linePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
+const powerLinePointsStr = computed(() =>
+  powerLinePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
 );
+
+// zoom wheel cho power
+const onPowerWheel = (e) => {
+  if (selectedReport.value !== "Batch Summary") return;
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const next = powerZoom.value * factor;
+  powerZoom.value = Math.min(maxPowerZoom, Math.max(minPowerZoom, next));
+};
+
+// Label thời gian cho power (giãn ra cho đẹp)
+const powerTimeLabels = computed(() => {
+  const data = aggregatedPowerTimeData.value;
+  if (!data.length) return [];
+
+  const interval = selectedPowerInterval.value;
+  let step = 1;
+
+  if (interval === 10) {
+    step = 2;
+  } else {
+    step = 1;
+  }
+
+  return data.filter((_, idx) => idx % step === 0);
+});
+
+/* ================= STEEL LINE (Batch Summary) ================= */
+
+/* AGGREGATE STEEL THEO INTERVAL */
+const aggregatedSteelTimeData = computed(() => {
+  if (selectedReport.value !== "Batch Summary") return [];
+
+  const raw = steelLineData.value;
+  const interval = selectedSteelInterval.value;
+  if (!raw.length || !interval) return [];
+
+  const buckets = {}; // { "HH:MM": sumSteel }
+
+  raw.forEach((p) => {
+    const [hStr, mStr] = (p.time || "").split(":");
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (Number.isNaN(h) || Number.isNaN(m)) return;
+
+    const total = h * 60 + m;
+    const bucketStart = Math.floor(total / interval) * interval;
+    const bh = String(Math.floor(bucketStart / 60)).padStart(2, "0");
+    const bm = String(bucketStart % 60).padStart(2, "0");
+    const key = `${bh}:${bm}`;
+
+    if (!buckets[key]) buckets[key] = 0;
+    buckets[key] += Number(p.value ?? p.steel_kg ?? 0) || 0;
+  });
+
+  return Object.keys(buckets)
+    .sort()
+    .map((time) => ({
+      time,
+      value: Number(buckets[time].toFixed(2)),
+    }));
+});
+
+/* MAX & TICKS CHO STEEL Y-AXIS (Batch Summary) */
+const steelMaxValue = computed(() => {
+  if (selectedReport.value !== "Batch Summary") return 35;
+
+  let baseMax = 14;
+  if (selectedSteelInterval.value === 20) baseMax = 28;
+
+  const maxData = Math.max(
+    0,
+    ...aggregatedSteelTimeData.value.map((p) => p.value || 0)
+  );
+
+  return Math.max(baseMax, Math.ceil(maxData));
+});
+
+const steelLineTicks = computed(() => {
+  if (selectedReport.value !== "Batch Summary") {
+    return defaultTicks;
+  }
+
+  const maxV = steelMaxValue.value;
+  const step = maxV / 7;
+  const ticks = [];
+  for (let i = 7; i >= 0; i--) {
+    ticks.push(Math.round(step * i));
+  }
+  return ticks;
+});
+
+const steelValueToY = (v) =>
+  lineChartHeight - (v / steelMaxValue.value) * lineChartHeight;
+
+/* ZOOM CHO STEEL LINE (Batch Summary) */
+const steelZoom = ref(1);
+const minSteelZoom = 0.5;
+const maxSteelZoom = 5;
+
+const steelSvgWidth = computed(() => lineChartWidth * steelZoom.value);
+
+const steelLinePoints = computed(() => {
+  const data = aggregatedSteelTimeData.value;
+  if (!data.length) return [];
+
+  const innerWidth = lineChartWidth - lineChartPaddingX * 2;
+
+  if (data.length === 1) {
+    return [
+      {
+        ...data[0],
+        x: clampX(lineChartWidth / 2 + lineXOffset),
+        y: steelValueToY(data[0].value),
+      },
+    ];
+  }
+
+  const stepX = innerWidth / (data.length - 1);
+
+  return data.map((p, idx) => {
+    const rawX = lineChartPaddingX + idx * stepX + lineXOffset;
+    return {
+      ...p,
+      x: clampX(rawX),
+      y: steelValueToY(p.value),
+    };
+  });
+});
+
+const steelLinePointsStr = computed(() =>
+  steelLinePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
+);
+
+// zoom wheel cho steel
+const onSteelWheel = (e) => {
+  if (selectedReport.value !== "Batch Summary") return;
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const next = steelZoom.value * factor;
+  steelZoom.value = Math.min(maxSteelZoom, Math.max(minSteelZoom, next));
+};
+
+// Label thời gian cho steel (giãn ra cho đẹp)
+const steelTimeLabels = computed(() => {
+  const data = aggregatedSteelTimeData.value;
+  if (!data.length) return [];
+
+  const interval = selectedSteelInterval.value;
+  let step = 1;
+
+  if (interval === 10) {
+    step = 2;
+  } else {
+    step = 1;
+  }
+
+  return data.filter((_, idx) => idx % step === 0);
+});
 
 /* ====== TOTAL & DISPLAY CHO STEEL / POWER ====== */
 const steelTotal = computed(() => {
   if (selectedReport.value === "Batch Summary") {
     return steelLineData.value.reduce(
-      (sum, item) => sum + (Number(item.value) || 0),
+      (sum, item) => sum + (Number(item.value ?? item.steel_kg ?? 0) || 0),
       0
     );
   }
   return steelBatches.value.reduce(
-    (sum, item) => sum + (Number(item.value) || 0),
+    (sum, item) => sum + (Number(item.value || 0)),
     0
   );
 });
@@ -256,12 +504,12 @@ const steelTotal = computed(() => {
 const powerTotal = computed(() => {
   if (selectedReport.value === "Batch Summary") {
     return powerTimeData.value.reduce(
-      (sum, item) => sum + (Number(item.value) || 0),
+      (sum, item) => sum + (Number(item.value ?? item.power_kw ?? 0) || 0),
       0
     );
   }
   return powerBatches.value.reduce(
-    (sum, item) => sum + (Number(item.value) || 0),
+    (sum, item) => sum + (Number(item.value || 0)),
     0
   );
 });
@@ -278,7 +526,7 @@ const steelAfterDisplay = computed(() => {
 const steelTotalDisplay = computed(() => steelTotal.value.toFixed(2));
 const powerTotalDisplay = computed(() => powerTotal.value.toFixed(2));
 
-/* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI DATE / TIME / REPORT / BATCH / SHIFT ====== */
+/* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI STATE ====== */
 onMounted(() => {
   const now = new Date();
   timeHour.value = now.getHours();
@@ -436,57 +684,147 @@ watch(
 
       <div class="dr-batch-content">
         <!-- LEFT CHART: POWER -->
-        <div class="dr-chart-card">
-          <div
-            class="dr-chart-title"
-            :class="{ 'dr-chart-title--zh': isChinese }"
-          >
-            {{ t("power") }}
-          </div>
-          <div class="dr-chart">
-            <div class="dr-y-axis">
-              <span>35</span>
-              <span>30</span>
-              <span>25</span>
-              <span>20</span>
-              <span>15</span>
-              <span>10</span>
-              <span>5</span>
-              <span>0</span>
+        <div
+          class="dr-chart-card"
+          :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }"
+        >
+          <!-- BATCH SUMMARY: LINE CHART + ZOOM -->
+          <template v-if="selectedReport === 'Batch Summary'">
+            <div
+              class="dr-chart-title"
+              :class="{ 'dr-chart-title--zh': isChinese }"
+            >
+              {{ t("power") }}
             </div>
 
-            <div class="dr-chart-scroll">
-              <div class="dr-chart-bars">
-                <div
-                  v-for="item in powerChartData"
-                  :key="item.time || item.batch"
-                  class="dr-bar-wrapper"
-                >
-                  <div class="dr-bar" :style="{ height: barHeight(item.value) }">
-                    <span class="dr-bar-value">{{ item.value }}</span>
-                  </div>
+            <!-- Interval buttons (POWER) -->
+            <div class="interval-toggle">
+              <button
+                v-for="opt in intervalOptions"
+                :key="opt.value"
+                class="interval-btn"
+                :class="{ active: selectedPowerInterval === opt.value }"
+                @click="selectedPowerInterval = opt.value"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
 
+            <div class="line-chart-box power-line-box" @wheel="onPowerWheel">
+              <div
+                class="power-line-inner"
+                :style="{ width: powerSvgWidth + 'px' }"
+              >
+                <svg
+                  class="line-chart-svg"
+                  :viewBox="`0 -10 ${lineChartWidth} ${lineChartHeight + 10}`"
+                >
+                  <!-- grid + Y ticks + label -->
+                  <g v-for="tick in powerLineTicks" :key="tick">
+                    <line
+                      :x1="0"
+                      :y1="powerValueToY(tick)"
+                      :x2="lineChartWidth"
+                      :y2="powerValueToY(tick)"
+                      stroke="#e0e0e0"
+                      stroke-width="1"
+                    />
+                    <text
+                      :x="4"
+                      :y="powerValueToY(tick) - 2"
+                      font-size="10"
+                      text-anchor="start"
+                      fill="#666"
+                    >
+                      {{ tick }}
+                    </text>
+                  </g>
+
+                  <!-- đường line -->
+                  <polyline
+                    class="line-chart-path"
+                    :points="powerLinePointsStr"
+                  />
+
+                  <!-- điểm + label -->
+                  <g v-for="(p, idx) in powerLinePoints" :key="idx">
+                    <circle
+                      class="line-chart-point"
+                      :cx="p.x"
+                      :cy="p.y"
+                      r="3"
+                    />
+                    <text
+                      class="line-chart-point-label"
+                      :x="p.x"
+                      :y="p.y - 6"
+                    >
+                      {{ p.value.toFixed(2) }}
+                    </text>
+                  </g>
+                </svg>
+
+                <!-- time labels, scroll cùng chart -->
+                <div class="line-chart-time-row power-time-row">
+                  <span v-for="(p, idx) in powerTimeLabels" :key="idx">
+                    {{ p.time }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div class="dr-x-axis-label">
+              {{ t("timeAxis") }}
+            </div>
+          </template>
+
+          <!-- CÁC REPORT KHÁC: BAR CHART CŨ -->
+          <template v-else>
+            <div
+              class="dr-chart-title"
+              :class="{ 'dr-chart-title--zh': isChinese }"
+            >
+              {{ t("power") }}
+            </div>
+            <div class="dr-chart">
+              <div class="dr-y-axis">
+                <span>35</span>
+                <span>30</span>
+                <span>25</span>
+                <span>20</span>
+                <span>15</span>
+                <span>10</span>
+                <span>5</span>
+                <span>0</span>
+              </div>
+
+              <div class="dr-chart-scroll">
+                <div class="dr-chart-bars">
                   <div
-                    :class="
-                      selectedReport === 'Batch Summary'
-                        ? 'dr-bar-labell'
-                        : 'dr-bar-label'
-                    "
+                    v-for="item in powerChartData"
+                    :key="item.batch"
+                    class="dr-bar-wrapper"
                   >
-                    {{
-                      selectedReport === "Batch Summary"
-                        ? item.time
-                        : item.batch
-                    }}
+                    <div
+                      class="dr-bar"
+                      :style="{ height: barHeight(item.value) }"
+                    >
+                      <!-- LÀM TRÒN 2 SỐ THẬP PHÂN Ở FE -->
+                      <span class="dr-bar-value">{{ format2(item.value) }}</span>
+                    </div>
+
+                    <div class="dr-bar-label">
+                      {{ item.batch }}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="dr-x-axis-label">
-            {{ selectedReport === "Batch Summary" ? t("timeAxis") : t("batchAxis") }}
-          </div>
+            <div class="dr-x-axis-label">
+              {{ t("batchAxis") }}
+            </div>
+          </template>
         </div>
 
         <!-- RIGHT CHART: STEEL BALL -->
@@ -503,49 +841,76 @@ watch(
               {{ t("dailyReport.steelBallWithUnit") }}
             </div>
 
-            <div class="line-chart-box">
-              <svg
-                class="line-chart-svg"
-                :viewBox="`0 -10 ${lineChartWidth} ${lineChartHeight + 10}`"
+            <!-- Interval buttons (STEEL) -->
+            <div class="interval-toggle">
+              <button
+                v-for="opt in intervalOptions"
+                :key="opt.value"
+                class="interval-btn"
+                :class="{ active: selectedSteelInterval === opt.value }"
+                @click="selectedSteelInterval = opt.value"
               >
-                <g v-for="tick in steelLineTicks" :key="tick">
-                  <line
-                    :x1="0"
-                    :y1="valueToY(tick)"
-                    :x2="lineChartWidth"
-                    :y2="valueToY(tick)"
-                    stroke="#e0e0e0"
-                    stroke-width="1"
-                  />
-                </g>
-
-                <polyline
-                  class="line-chart-path"
-                  :points="linePointsStr"
-                />
-
-                <g v-for="(p, idx) in linePoints" :key="idx">
-                  <circle
-                    class="line-chart-point"
-                    :cx="p.x"
-                    :cy="p.y"
-                    r="3"
-                  />
-                  <text
-                    class="line-chart-point-label"
-                    :x="p.x"
-                    :y="p.y - 6"
-                  >
-                    {{ p.value }}
-                  </text>
-                </g>
-              </svg>
+                {{ opt.label }}
+              </button>
             </div>
 
-            <div class="line-chart-time-row">
-              <span v-for="(p, idx) in steelLineData" :key="idx">
-                {{ p.time }}
-              </span>
+            <div class="line-chart-box" @wheel="onSteelWheel">
+              <div
+                class="power-line-inner"
+                :style="{ width: steelSvgWidth + 'px' }"
+              >
+                <svg
+                  class="line-chart-svg"
+                  :viewBox="`0 -10 ${lineChartWidth} ${lineChartHeight + 10}`"
+                >
+                  <g v-for="tick in steelLineTicks" :key="tick">
+                    <line
+                      :x1="0"
+                      :y1="steelValueToY(tick)"
+                      :x2="lineChartWidth"
+                      :y2="steelValueToY(tick)"
+                      stroke="#e0e0e0"
+                      stroke-width="1"
+                    />
+                    <text
+                      :x="4"
+                      :y="steelValueToY(tick) - 2"
+                      font-size="10"
+                      text-anchor="start"
+                      fill="#666"
+                    >
+                      {{ tick }}
+                    </text>
+                  </g>
+
+                  <polyline
+                    class="line-chart-path"
+                    :points="steelLinePointsStr"
+                  />
+
+                  <g v-for="(p, idx) in steelLinePoints" :key="idx">
+                    <circle
+                      class="line-chart-point"
+                      :cx="p.x"
+                      :cy="p.y"
+                      r="3"
+                    />
+                    <text
+                      class="line-chart-point-label"
+                      :x="p.x"
+                      :y="p.y - 6"
+                    >
+                      {{ p.value.toFixed(2) }}
+                    </text>
+                  </g>
+                </svg>
+
+                <div class="line-chart-time-row">
+                  <span v-for="(p, idx) in steelTimeLabels" :key="idx">
+                    {{ p.time }}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div class="dr-x-axis-label">{{ t("timeAxis") }}</div>
@@ -579,7 +944,8 @@ watch(
                     class="dr-bar-wrapper"
                   >
                     <div class="dr-bar" :style="{ height: barHeight(item.value) }">
-                      <span class="dr-bar-value">{{ item.value }}</span>
+                      <!-- LÀM TRÒN 2 SỐ THẬP PHÂN Ở FE -->
+                      <span class="dr-bar-value">{{ format2(item.value) }}</span>
                     </div>
                     <div class="dr-bar-labell">{{ item.batch }}</div>
                   </div>
@@ -642,11 +1008,6 @@ watch(
     </div>
   </div>
 </template>
-
-<style scoped>
-/* (phần CSS giữ nguyên như file anh gửi, em không đụng) */
-</style>
-
 
 <style scoped>
 .daily-report {
@@ -931,7 +1292,7 @@ watch(
   left: -22px !important;
 }
 .dr-chart-titlee--zh {
-  left: -22px !important ;
+  left: -22px !important;
 }
 
 /* ===================== CHART AREA ===================== */
@@ -1027,7 +1388,7 @@ watch(
   text-align: center;
 }
 
-/* X axis */
+/* X axis label text */
 .dr-x-axis-label {
   text-align: center;
   margin-top: 76px;
@@ -1035,7 +1396,6 @@ watch(
 }
 
 /* RIGHT CHART WIDTH */
-.dr-chart-scroll-right {}
 .dr-chart-bars-right {
   min-width: 100%;
 }
@@ -1045,6 +1405,29 @@ watch(
 
 .dr-chart-bars-right .dr-bar {
   width: 40%;
+}
+
+/* Interval toggle */
+.interval-toggle {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+}
+
+.interval-btn {
+  border: 1px solid #ccc;
+  background: #fff;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.interval-btn.active {
+  background: #173656;
+  color: #fff;
+  border-color: #173656;
 }
 
 /* Alarm History */
@@ -1156,8 +1539,21 @@ watch(
   border-left: 1px solid #ccc;
   border-bottom: 1px solid #ccc;
   box-sizing: border-box;
+
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
+/* power line: chứa svg + time row */
+.power-line-box {
+}
+
+.power-line-inner {
+  display: flex;
+  flex-direction: column;
+}
+
+/* svg chiếm full width của inner */
 .line-chart-svg {
   width: 100%;
   height: 100%;
@@ -1190,6 +1586,11 @@ watch(
 .line-chart-time-row span {
   min-width: 0;
   text-align: center;
+}
+
+/* power time row có thể dài hơn, theo width inner */
+.power-time-row {
+  padding-top: 4px;
 }
 
 /* TIME EDIT MODE (VERSION 2) */
