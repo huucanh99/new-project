@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
 import { useI18n } from "@/languages/i18n";
 
@@ -7,7 +7,7 @@ import { useI18n } from "@/languages/i18n";
 const { t } = useI18n();
 
 /* ==== Report type & date range ==== */
-// dùng key nội bộ: "daily" | "monthly" | "yearly"
+// "daily" | "monthly" | "yearly"
 const reportTypes = ["daily", "monthly", "yearly"];
 const selectedReportType = ref("daily");
 
@@ -73,46 +73,103 @@ const openToPicker = () => {
   }
 };
 
-/* ==== Fake summary data ==== */
-const steelBallTotal = ref(1234.56);
-const powerTotal = ref(76543.21);
-const timeHour = ref(400);
-const timeMinute = ref(1);
+/* ==== SUMMARY DATA (từ BE) ==== */
+const steelBallTotal = ref(0);
+const powerTotal = ref(0);
 
-/* ==== Fake chart data ==== */
-const currentData = [
-  { x: 0, y: 50 },
-  { x: 1, y: 40 },
-  { x: 2, y: 70 },
-  { x: 3, y: 55 },
-  { x: 4, y: 72 },
-  { x: 5, y: 42 },
-  { x: 6, y: 65 },
-  { x: 7, y: 48 },
-  { x: 8, y: 60 },
-  { x: 9, y: 35 },
+// BE trả totalTimeHours (float), mình đổi sang phút rồi tách giờ/phút
+const totalMinutes = ref(0);
+const timeHour = computed(() => Math.floor(totalMinutes.value / 60));
+const timeMinute = computed(() => totalMinutes.value % 60);
+
+/* ==== RAW CHART DATA (từ BE) ==== */
+// raw từ BE: [{ x: "2025-12-02 17:02", y: 0.3 }, ...]
+const rawSeriesCurrent = ref([]);
+const rawSeriesSteelBall = ref([]);
+
+/* ====== INTERVAL 1H / 2H (giống batch summary nhưng đổi nhãn) ====== */
+const intervalOptions = [
+  { value: 60, label: "1h" },
+  { value: 120, label: "2h" },
 ];
 
-const weightData = [
-  { x: 0, y: 1000 },
-  { x: 1, y: 920 },
-  { x: 2, y: 820 },
-  { x: 3, y: 700 },
-  { x: 4, y: 520 },
-  { x: 5, y: 380 },
-  { x: 6, y: 320 },
-  { x: 7, y: 300 },
-];
+const selectedCurrentInterval = ref(60); // 1h
+const selectedWeightInterval = ref(60);  // 1h
 
-/* ticks & maxY cho 2 chart – để vẽ số bên trái & scale cố định */
-const currentTicks = [80, 60, 40, 20, 0];
-const weightTicks = [1000, 800, 600, 400, 200, 0];
-const maxYCurrent = 80;
-const maxYWeight = 1000;
+// helper gom bucket theo intervalMinutes, từ raw {x/time, y/value}
+const bucketizeByInterval = (raw, intervalMinutes) => {
+  if (!raw || !raw.length || !intervalMinutes) return [];
 
-/* Kích thước & vùng vẽ trong SVG  */
+  const buckets = new Map(); // key = bucketStartMinutes, value = sum
+
+  raw.forEach((p) => {
+    const timeStr = p.time || p.x;
+    if (!timeStr) return;
+
+    // chuẩn hóa "YYYY-MM-DD HH:mm" -> ISO
+    const isoStr = timeStr.includes("T")
+      ? timeStr
+      : timeStr.replace(" ", "T");
+
+    const dt = new Date(isoStr);
+    if (Number.isNaN(dt.getTime())) return;
+
+    const minutes = Math.floor(dt.getTime() / (1000 * 60));
+    const bucketStartMinutes =
+      Math.floor(minutes / intervalMinutes) * intervalMinutes;
+
+    const val = Number(p.value ?? p.y ?? 0) || 0;
+    const prev = buckets.get(bucketStartMinutes) || 0;
+    buckets.set(bucketStartMinutes, prev + val);
+  });
+
+  return Array.from(buckets.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([bucketMinutes, sum]) => {
+      const dt = new Date(bucketMinutes * 60 * 1000);
+      const hh = String(dt.getHours()).padStart(2, "0");
+      const mm = String(dt.getMinutes()).padStart(2, "0");
+      return {
+        time: `${hh}:${mm}`,
+        value: Number(sum.toFixed(2)),
+      };
+    });
+};
+
+/* ====== DATA ĐÃ GOM INTERVAL ĐỂ VẼ LINE ====== */
+const aggregatedCurrentRaw = computed(() =>
+  bucketizeByInterval(rawSeriesCurrent.value, selectedCurrentInterval.value)
+);
+const aggregatedWeightRaw = computed(() =>
+  bucketizeByInterval(rawSeriesSteelBall.value, selectedWeightInterval.value)
+);
+
+/* map sang dạng {x:index, y:value, label} để vẽ + label trục X */
+const currentData = computed(() =>
+  aggregatedCurrentRaw.value.map((item, idx) => ({
+    x: idx,
+    y: Number(item.value || 0),
+    label: item.time,
+  }))
+);
+
+const weightData = computed(() => {
+  let sum = 0;
+  return aggregatedWeightRaw.value.map((item, idx) => {
+    sum += Number(item.value || 0); // cộng dồn
+    return {
+      x: idx,
+      y: sum,
+      label: item.time,
+    };
+  });
+});
+
+
+/* ==== Chart config (SVG) ==== */
 const svgWidth = 400;
 const svgHeight = 150;
+
 /* margin vùng vẽ */
 const innerLeft = 40;
 const innerRight = 10;
@@ -122,18 +179,83 @@ const innerWidth = svgWidth - innerLeft - innerRight;
 const innerHeight = svgHeight - innerTop - innerBottom;
 
 /* padding để line không bắt đầu ngay trục Y */
-const lineLeftPadding = 15; // cách trục Y 15px
+const lineLeftPadding = 15;
 const lineRightPadding = 15;
 const lineInnerWidth = innerWidth - lineLeftPadding - lineRightPadding;
+
+/* ====== scale Y theo kiểu batch summary, base quanh 35 ====== */
+const maxYCurrent = computed(() => {
+  const maxData = Math.max(0, ...currentData.value.map((d) => d.y));
+  // base: 35 cho 1h, 70 cho 2h
+  let base =
+    selectedCurrentInterval.value === 60
+      ? 35
+      : 70;
+  const v = Math.max(base, maxData);
+  // bậc bước 5 hoặc 10 cho đẹp
+  const step = selectedCurrentInterval.value === 60 ? 5 : 10;
+  return Math.ceil(v / step) * step;
+});
+
+const maxYWeight = computed(() => {
+  const maxData = Math.max(0, ...weightData.value.map((d) => d.y));
+  let base =
+    selectedWeightInterval.value === 60
+      ? 35
+      : 70;
+  const step = selectedWeightInterval.value === 60 ? 5 : 10;
+  const v = Math.max(base, maxData);
+  return Math.ceil(v / step) * step;
+});
+
+/* ticks (8 tick giống bên batch summary: max -> 0) */
+const makeTicks = (max, steps) => {
+  const arr = [];
+  const step = max / steps;
+  for (let i = steps; i >= 0; i--) {
+    arr.push(Math.round(step * i));
+  }
+  return arr;
+};
+
+const currentTicks = computed(() => makeTicks(maxYCurrent.value, 7));
+const weightTicks = computed(() => makeTicks(maxYWeight.value, 7));
 
 /* chuyển value→Y cho line & ticks */
 const mapY = (value, maxY) =>
   innerTop + (1 - value / maxY) * innerHeight;
 
-const valueToYCurrent = (v) => mapY(v, maxYCurrent);
-const valueToYWeight = (v) => mapY(v, maxYWeight);
+const valueToYCurrent = (v) => mapY(v, maxYCurrent.value);
+const valueToYWeight = (v) => mapY(v, maxYWeight.value);
 
-/* line thẳng (dùng cho Steel Ball) */
+/* ====== ZOOM NGANG + SCROLL ====== */
+const minZoom = 0.5;
+const maxZoom = 5;
+
+/* Current */
+const currentZoom = ref(1);
+const currentSvgWidth = computed(() => svgWidth * currentZoom.value);
+
+const onCurrentWheel = (e) => {
+  if (!currentData.value.length) return;
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const next = currentZoom.value * factor;
+  currentZoom.value = Math.min(maxZoom, Math.max(minZoom, next));
+};
+
+/* Steel Ball */
+const weightZoom = ref(1);
+const weightSvgWidth  = computed(() => svgWidth * weightZoom.value);
+const onWeightWheel = (e) => {
+  if (!weightData.value.length) return;
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const next = weightZoom.value * factor;
+  weightZoom.value = Math.min(maxZoom, Math.max(minZoom, next));
+};
+
+/* line thẳng (Steel Ball) */
 const makeLinePoints = (data, maxY) => {
   if (!data.length) return "";
   const maxX = data[data.length - 1].x || 1;
@@ -148,7 +270,7 @@ const makeLinePoints = (data, maxY) => {
     .join(" ");
 };
 
-/* Đường cong mượt cho CURRENT (A) – Catmull–Rom -> Bézier */
+/* đường cong mượt Current (Catmull–Rom -> Bézier) */
 const makeSmoothPath = (data, maxY) => {
   if (!data.length) return "";
 
@@ -183,12 +305,36 @@ const makeSmoothPath = (data, maxY) => {
   return dStr;
 };
 
-/* đường cong cho CURRENT */
-const currentPath = computed(() => makeSmoothPath(currentData, maxYCurrent));
-/* polyline cho Steel Ball */
-const weightPoints = computed(() => makeLinePoints(weightData, maxYWeight));
+/* đường cong Current (A) */
+const currentPath = computed(() =>
+  makeSmoothPath(currentData.value, maxYCurrent.value)
+);
 
-/* Fake power detail cards – label dùng i18n */
+/* polyline Steel Ball */
+const weightPoints = computed(() =>
+  makeLinePoints(weightData.value, maxYWeight.value)
+);
+
+/* ====== LABEL X GIỐNG powerTimeLabels / steelTimeLabels ====== */
+const currentTimeLabels = computed(() => {
+  const data = currentData.value;
+  if (!data.length) return [];
+  let step = 1;
+  if (data.length > 24) step = 4;
+  else if (data.length > 12) step = 2;
+  return data.filter((_, idx) => idx % step === 0);
+});
+
+const weightTimeLabels = computed(() => {
+  const data = weightData.value;
+  if (!data.length) return [];
+  let step = 1;
+  if (data.length > 24) step = 4;
+  else if (data.length > 12) step = 2;
+  return data.filter((_, idx) => idx % step === 0);
+});
+
+/* Power detail cards – vẫn fake tạm */
 const powerCards = computed(() => [
   { label: t("powerSupply"), value: "123.01" },
   { label: t("impeller1"), value: "123.01" },
@@ -201,8 +347,8 @@ const downloadCsv = () => {
   const currentHeader = ["Index", "Current(A)"];
   const weightHeader = ["Index", "SteelBallWeight(KG)"];
 
-  const currentRows = currentData.map((d) => [d.x, d.y]);
-  const weightRows = weightData.map((d) => [d.x, d.y]);
+  const currentRows = currentData.value.map((d, idx) => [idx, d.y]);
+  const weightRows = weightData.value.map((d, idx) => [idx, d.y]);
 
   let csv = "";
 
@@ -232,12 +378,85 @@ const downloadCsv = () => {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 };
-</script>
 
+/* ==== Call API /api/historical-report ==== */
+const API_BASE = "http://26.51.197.241:4000";
+const loading = ref(false);
+const error = ref("");
+
+const buildRangeParams = () => {
+  const type = selectedReportType.value;
+  if (type === "daily") {
+    return { from: fromDate.value, to: toDate.value };
+  }
+  if (type === "monthly") {
+    return { from: fromMonth.value, to: toMonth.value };
+  }
+  if (type === "yearly") {
+    return { from: fromYear.value, to: toYear.value };
+  }
+  return { from: fromDate.value, to: toDate.value };
+};
+
+const fetchHistorical = async () => {
+  try {
+    loading.value = true;
+    error.value = "";
+
+    const { from, to } = buildRangeParams();
+
+    const params = new URLSearchParams({
+      reportType: selectedReportType.value,
+      from,
+      to,
+    });
+
+    const res = await fetch(
+      `${API_BASE}/api/historical-report?${params.toString()}`
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    // summary
+    const sum = data.summary || {};
+    powerTotal.value = Number(sum.totalPowerKw || 0);
+    steelBallTotal.value = Number(sum.totalSteelBallKg || 0);
+
+    const totalHours = Number(sum.totalTimeHours || 0);
+    totalMinutes.value = Math.round(totalHours * 60);
+
+    // series (raw)
+    rawSeriesCurrent.value = data.seriesCurrent || [];
+    rawSeriesSteelBall.value = data.seriesSteelBall || [];
+
+    // reset zoom mỗi lần search
+    currentZoom.value = 1;
+    weightZoom.value = 1;
+  } catch (e) {
+    console.error(e);
+    error.value = e.message || "Error loading historical report";
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleSearch = () => {
+  fetchHistorical();
+};
+
+onMounted(() => {
+  fetchHistorical();
+});
+</script>
 
 <template>
   <!-- dùng đồng hồ real-time -->
   <TimeClock class="sp-time" size="normal" align="left" />
+
   <div class="historical-page">
     <!-- TOP BAR -->
     <header class="top-bar">
@@ -353,7 +572,9 @@ const downloadCsv = () => {
 
         <!-- Search + CSV -->
         <div class="filter-group buttons-group">
-          <button class="btn btn-search">{{ t("search") }}</button>
+          <button class="btn btn-search" @click="handleSearch">
+            {{ t("search") }}
+          </button>
           <button class="btn btn-csv" @click="downloadCsv">
             {{ t("downloadCsv") }}
           </button>
@@ -413,55 +634,83 @@ const downloadCsv = () => {
       <!-- Current (A) -->
       <div class="chart-card">
         <div class="chart-title">{{ t("current") }}</div>
+
+        <!-- nút 1h / 2h giống batch summary -->
+        <div class="interval-toggle">
+          <button
+            v-for="opt in intervalOptions"
+            :key="opt.value"
+            class="interval-btn"
+            :class="{ active: selectedCurrentInterval === opt.value }"
+            @click="selectedCurrentInterval = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+
         <div class="chart-inner">
-          <div class="chart-area">
-            <svg
-              :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
-              preserveAspectRatio="none"
-              class="chart-svg"
+          <!-- OUTER: box cố định, có overflow-x -->
+          <div class="chart-area" @wheel="onCurrentWheel">
+            <!-- INNER: rộng theo zoom -->
+            <div
+              class="chart-inner-scroll"
+              :style="{ width: currentSvgWidth + 'px' }"
             >
-              <!-- UNIT -->
-              <text
-                :x="innerLeft - 7"
-                :y="innerTop - 18"
-                text-anchor="end"
-                class="y-unit"
+              <svg
+                :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
+                preserveAspectRatio="none"
+                class="chart-svg"
               >
-                (A)
-              </text>
-
-              <!-- TICKS -->
-              <g v-for="tick in currentTicks" :key="'cg-' + tick">
+                <!-- UNIT -->
                 <text
-                  :x="innerLeft - 10"
-                  :y="valueToYCurrent(tick) + 3"
+                  :x="innerLeft - 7"
+                  :y="innerTop - 18"
                   text-anchor="end"
-                  class="y-tick-text"
+                  class="y-unit"
                 >
-                  {{ tick }}
+                  (A)
                 </text>
-              </g>
 
-              <!-- trục X (0) -->
-              <line
-                :x1="innerLeft"
-                :y1="valueToYCurrent(0)"
-                :x2="svgWidth - innerRight"
-                :y2="valueToYCurrent(0)"
-                class="axis-line"
-              />
-              <!-- trục Y -->
-              <line
-                :x1="innerLeft"
-                :y1="valueToYCurrent(currentTicks[0])"
-                :x2="innerLeft"
-                :y2="valueToYCurrent(0)"
-                class="axis-line"
-              />
+                <!-- TICKS -->
+                <g v-for="tick in currentTicks" :key="'cg-' + tick">
+                  <text
+                    :x="innerLeft - 10"
+                    :y="valueToYCurrent(tick) + 3"
+                    text-anchor="end"
+                    class="y-tick-text"
+                  >
+                    {{ tick }}
+                  </text>
+                </g>
 
-              <!-- đường cong Current (A) -->
-              <path :d="currentPath" class="chart-line" />
-            </svg>
+                <!-- trục X (0) -->
+                <line
+                  :x1="innerLeft"
+                  :y1="valueToYCurrent(0)"
+                  :x2="svgWidth - innerRight"
+                  :y2="valueToYCurrent(0)"
+                  class="axis-line"
+                />
+                <!-- trục Y -->
+                <line
+                  :x1="innerLeft"
+                  :y1="valueToYCurrent(currentTicks[0])"
+                  :x2="innerLeft"
+                  :y2="valueToYCurrent(0)"
+                  class="axis-line"
+                />
+
+                <!-- đường cong Current (A) -->
+                <path :d="currentPath" class="chart-line" />
+              </svg>
+
+              <!-- Label X -->
+              <div class="chart-time-row">
+                <span v-for="(d, idx) in currentTimeLabels" :key="'ct-' + idx">
+                  {{ d.label }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -469,55 +718,81 @@ const downloadCsv = () => {
       <!-- Steel Ball Weight -->
       <div class="chart-card">
         <div class="chart-title">{{ t("steelBallWeight") }}</div>
-        <div class="chart-inner">
-          <div class="chart-area">
-            <svg
-              :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
-              preserveAspectRatio="none"
-              class="chart-svg"
-            >
-              <!-- UNIT -->
-              <text
-                :x="innerLeft - 10"
-                :y="innerTop - 17"
-                text-anchor="end"
-                class="y-unit"
-              >
-                (KG)
-              </text>
 
-              <!-- TICKS -->
-              <g v-for="tick in weightTicks" :key="'wg-' + tick">
+        <!-- nút 1h / 2h -->
+        <div class="interval-toggle">
+          <button
+            v-for="opt in intervalOptions"
+            :key="opt.value"
+            class="interval-btn"
+            :class="{ active: selectedWeightInterval === opt.value }"
+            @click="selectedWeightInterval = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+
+        <div class="chart-inner">
+          <div class="chart-area" @wheel="onWeightWheel">
+            <div
+              class="chart-inner-scroll"
+              :style="{ width: weightSvgWidth + 'px' }"
+            >
+              <svg
+                :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
+                preserveAspectRatio="none"
+                class="chart-svg"
+              >
+                <!-- UNIT -->
                 <text
                   :x="innerLeft - 10"
-                  :y="valueToYWeight(tick) + 3"
+                  :y="innerTop - 17"
                   text-anchor="end"
-                  class="y-tick-text"
+                  class="y-unit"
                 >
-                  {{ tick }}
+                  (KG)
                 </text>
-              </g>
 
-              <!-- trục X (0) -->
-              <line
-                :x1="innerLeft"
-                :y1="valueToYWeight(0)"
-                :x2="svgWidth - innerRight"
-                :y2="valueToYWeight(0)"
-                class="axis-line"
-              />
-              <!-- trục Y -->
-              <line
-                :x1="innerLeft"
-                :y1="valueToYWeight(weightTicks[0])"
-                :x2="innerLeft"
-                :y2="valueToYWeight(0)"
-                class="axis-line"
-              />
+                <!-- TICKS -->
+                <g v-for="tick in weightTicks" :key="'wg-' + tick">
+                  <text
+                    :x="innerLeft - 10"
+                    :y="valueToYWeight(tick) + 3"
+                    text-anchor="end"
+                    class="y-tick-text"
+                  >
+                    {{ tick }}
+                  </text>
+                </g>
 
-              <!-- đường line Steel Ball -->
-              <polyline :points="weightPoints" class="chart-line" />
-            </svg>
+                <!-- trục X (0) -->
+                <line
+                  :x1="innerLeft"
+                  :y1="valueToYWeight(0)"
+                  :x2="svgWidth - innerRight"
+                  :y2="valueToYWeight(0)"
+                  class="axis-line"
+                />
+                <!-- trục Y -->
+                <line
+                  :x1="innerLeft"
+                  :y1="valueToYWeight(weightTicks[0])"
+                  :x2="innerLeft"
+                  :y2="valueToYWeight(0)"
+                  class="axis-line"
+                />
+
+                <!-- đường line Steel Ball -->
+                <polyline :points="weightPoints" class="chart-line" />
+              </svg>
+
+              <!-- Label X -->
+              <div class="chart-time-row">
+                <span v-for="(d, idx) in weightTimeLabels" :key="'wt-' + idx">
+                  {{ d.label }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -533,12 +808,13 @@ const downloadCsv = () => {
         </div>
       </div>
     </section>
+
+    <!-- có thể hiển thị error nếu muốn -->
+    <p v-if="error" style="color: red; margin-top: 8px">{{ error }}</p>
   </div>
 </template>
 
-
 <style scoped>
-/* giữ nguyên toàn bộ CSS của anh */
 .historical-page {
   box-sizing: border-box;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -550,11 +826,6 @@ const downloadCsv = () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.top-time {
-  font-size: 20px;
-  font-weight: 500;
 }
 
 .top-filters {
@@ -679,7 +950,7 @@ const downloadCsv = () => {
 
 .btn-csv {
   padding: 10px 20px;
-  background: #E7E6E6;
+  background: #e7e6e6;
 }
 
 /* SUMMARY ROW */
@@ -754,7 +1025,8 @@ const downloadCsv = () => {
 .charts-row {
   margin-top: 18px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Cho phép content overflow mà không đẩy bể layout */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   background: #d5dde8;
   gap: 10px;
   padding: 0px 18px;
@@ -763,6 +1035,9 @@ const downloadCsv = () => {
 
 .chart-card {
   padding-bottom: 13px;
+  position: relative;
+  /* quan trọng để grid không bị kéo giãn theo nội dung */
+  min-width: 0;
 }
 
 .chart-title {
@@ -775,11 +1050,18 @@ const downloadCsv = () => {
 .chart-inner {
   background: #ffffff;
   padding: 20px 10px 0px 0px;
+  min-width: 0;
 }
 
+/* OUTER scroll box */
 .chart-area {
   width: 100%;
-  height: 180px;
+  height: 240px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  border-left: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
 }
 
 /* SVG */
@@ -787,6 +1069,12 @@ const downloadCsv = () => {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* container bên trong cho svg + time row, width bind theo zoom */
+.chart-inner-scroll {
+  display: flex;
+  flex-direction: column;
 }
 
 /* trục X/Y */
@@ -812,6 +1100,19 @@ const downloadCsv = () => {
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* hàng label X giống line-chart-time-row ở trang kia */
+.chart-time-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 12px 6px 48px;
+  font-size: 10px;
+}
+
+.chart-time-row span {
+  min-width: 0;
+  text-align: center;
 }
 
 /* POWER ROW */
@@ -842,7 +1143,7 @@ const downloadCsv = () => {
 .power-label {
   text-align: center;
   font-size: 16px;
-  color: #2F5597;
+  color: #2f5597;
 }
 
 .power-value {
@@ -852,5 +1153,28 @@ const downloadCsv = () => {
   padding: 8px 0px;
   font-size: 30px;
   font-weight: 600;
+}
+
+/* Interval toggle giống batch summary */
+.interval-toggle {
+  position: absolute;
+  top: 4px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+}
+
+.interval-btn {
+  border: 1px solid #ccc;
+  background: #fff;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.interval-btn.active {
+  background: #173656;
+  color: #fff;
+  border-color: #173656;
 }
 </style>

@@ -119,7 +119,8 @@ const batchInProgress = ref("");
 const loading = ref(false);
 const error = ref("");
 
-const API_BASE = "http://localhost:4000";
+const API_BASE = "http://26.51.197.241:4000";
+// const API_BASE = "http://localhost:4000";
 
 /* ====== helper format số (làm tròn FE) ====== */
 const format2 = (value) => {
