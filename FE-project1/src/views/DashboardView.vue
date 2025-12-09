@@ -88,8 +88,8 @@ const fetchDashboard = async () => {
   errorMsg.value = "";
 
   try {
-    // const res = await fetch("http://localhost:4000/api/dashboard", {
-    const res = await fetch("http://26.51.197.241:4000/api/dashboard", {
+    const res = await fetch("http://localhost:4000/api/dashboard", {
+    // const res = await fetch("http://26.51.197.241:4000/api/dashboard", {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -133,8 +133,8 @@ const fetchAlarms = async () => {
   alarmError.value = "";
 
   try {
-    // const res = await fetch("http://localhost:4000/api/alarms", {
-    const res = await fetch("http://26.51.197.241:4000/api/alarms", {
+    const res = await fetch("http://localhost:4000/api/alarms", {
+    // const res = await fetch("http://26.51.197.241:4000/api/alarms", {
       headers: { "Content-Type": "application/json" },
     });
 
