@@ -9,8 +9,8 @@ const { t } = useI18n();
 const emit = defineEmits(["go-life"]);
 
 // 👇 ĐỔI LẠI CHO PHÙ HỢP MÔI TRƯỜNG CỦA ANH
-const API_BASE = "http://localhost:4000";
-// const API_BASE = "http://26.51.197.241:4000";
+// const API_BASE = "http://localhost:4000";
+const API_BASE = "http://26.51.197.241:4000";
 
 /* ==== Steel ball type ==== */
 const steelBallTypes = [
@@ -110,8 +110,8 @@ const fetchAlarmSettings = async () => {
     alarms.value.voltageUpper = s.voltage_ps?.upper ?? null;
     alarms.value.voltageLower = s.voltage_ps?.lower ?? null;
 
-    alarms.value.powerUpper = s.power_kw?.upper ?? null;
-    alarms.value.powerLower = s.power_kw?.lower ?? null;
+    alarms.value.powerUpper = s.power_ps?.upper ?? null;
+    alarms.value.powerLower = s.power_ps?.lower ?? null;
   } catch (err) {
     console.error("fetchAlarmSettings error:", err);
     errorMsg.value = err.message;
@@ -146,7 +146,7 @@ const saveAlarms = async () => {
           upper: alarms.value.voltageUpper,
           lower: alarms.value.voltageLower,
         },
-        power_kw: {
+        power_ps: {
           upper: alarms.value.powerUpper,
           lower: alarms.value.powerLower,
         },

@@ -31,7 +31,7 @@ export const translations = {
     alarmStartTime: "Start Time",
     alarmEndTime: "End Time",
     alarmDetails: "Details",
-
+    alarmAck: "Ack",
     dateLabel: "Date",
     batchId: "Batch ID",
     timeAxis: "TIME",
@@ -66,12 +66,13 @@ export const translations = {
     downloadCsv: "Download CSV",
 
     historical: {
-    reportType: {
+      reportType: {
         daily: "Daily Report",
         monthly: "Monthly Report",
         yearly: "Yearly Report",
-        },
+      },
     },
+
     generalSettings: {
       steelTypeTitle: "Steel Ball Type Settings",
       alarmTitle: "Alarm Settings",
@@ -89,6 +90,7 @@ export const translations = {
       typeB: "Type B",
       typeC: "Type C",
     },
+
     lifeWarning: {
       title: "Component Life Warning Setting",
       backButton: "← Back to Alarm Settings",
@@ -100,6 +102,7 @@ export const translations = {
       validationRequired: "Please input warning hours before saving.",
       validationPositive: "Warning hours must be a positive number.",
 
+      // tên các component
       impeller1: "Impeller 1",
       impeller2: "Impeller 2",
       blade1: "Blade 1",
@@ -109,6 +112,17 @@ export const translations = {
       clawTube1: "Claw Tube 1",
       clawTube2: "Claw Tube 2",
       filter: "Filter",
+
+      // ===== THÊM CÁC CÂU DÙNG CHO ALERT / BUTTON STATE =====
+      lifeWarningTriggered:
+        "{{name}} has reached its warning limit ({{hours}} hours).",
+      saving: "Saving...",
+      resetting: "Resetting...",
+      saveSuccess: "Saved successfully.",
+      savedOne: "{{name}} warning hours have been saved.",
+      resetConfirm:
+        "Reset {{name}} accumulated hours to 0 and start counting again?",
+      resetDone: "{{name}} accumulated hours have been reset to 0.",
     },
   },
 
@@ -139,7 +153,7 @@ export const translations = {
     alarmStartTime: "開始時間",
     alarmEndTime: "結束時間",
     alarmDetails: "內容",
-
+    alarmAck: "確認",
     dateLabel: "日期",
     batchId: "批次編號",
     timeAxis: "時間",
@@ -174,12 +188,13 @@ export const translations = {
     downloadCsv: "下載 CSV",
 
     historical: {
-    reportType: {
+      reportType: {
         daily: "日報表",
         monthly: "月報表",
         yearly: "年報表",
-        },
+      },
     },
+
     generalSettings: {
       steelTypeTitle: "鋼珠種類設定",
       alarmTitle: "警報設定",
@@ -197,6 +212,7 @@ export const translations = {
       typeB: "Type B",
       typeC: "Type C",
     },
+
     lifeWarning: {
       title: "元件壽命警報設定",
       backButton: "← 返回警報設定",
@@ -217,6 +233,15 @@ export const translations = {
       clawTube1: "爪管 1",
       clawTube2: "爪管 2",
       filter: "濾網",
+
+      lifeWarningTriggered:
+        "{{name}} 的累積運轉時間已達警報時間（{{hours}} 小時）。",
+      saving: "儲存中…",
+      resetting: "重置中…",
+      saveSuccess: "已成功儲存。",
+      savedOne: "{{name}} 的警報時間已更新。",
+      resetConfirm: "是否將 {{name}} 的累積運轉時間重置為 0 並重新計算？",
+      resetDone: "{{name}} 的累積運轉時間已重置為 0。",
     },
   },
 };
@@ -224,7 +249,8 @@ export const translations = {
 // hook nhỏ cho từng component xài
 export const useI18n = () => {
   // t() hỗ trợ key dạng "dailyReport.steelBall"
-  const t = (key) => {
+  // và interpolation: t("lifeWarning.lifeWarningTriggered", { name: "...", hours: "2.00" })
+  const t = (key, vars) => {
     const langPack = translations[currentLang.value];
     if (!langPack) return key;
 
@@ -239,11 +265,23 @@ export const useI18n = () => {
       }
     }
 
-    return typeof cur === "string" ? cur : key;
+    if (typeof cur !== "string") return key;
+
+    let result = cur;
+
+    // thay {{var}} bằng giá trị trong vars
+    if (vars && typeof vars === "object") {
+      for (const [k, v] of Object.entries(vars)) {
+        const re = new RegExp(`{{\\s*${k}\\s*}}`, "g");
+        result = result.replace(re, String(v));
+      }
+    }
+
+    return result;
   };
 
   // ts cho status
-  const ts = (statusKey) => t(`status.${statusKey}`);
+  const ts = (statusKey, vars) => t(`status.${statusKey}`, vars);
 
   return { currentLang, t, ts };
 };

@@ -380,8 +380,8 @@ const downloadCsv = () => {
 };
 
 /* ==== Call API /api/historical-report ==== */
-const API_BASE = "http://localhost:4000";
-// const API_BASE = "http://26.51.197.241:4000";
+// const API_BASE = "http://localhost:4000";
+const API_BASE = "http://26.51.197.241:4000";
 const loading = ref(false);
 const error = ref("");
 

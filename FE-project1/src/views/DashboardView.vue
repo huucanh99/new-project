@@ -6,13 +6,18 @@ import { useI18n } from "@/languages/i18n";
 
 const { t, ts } = useI18n();
 
-/* ====== STATE DASHBOARD LẤY TỪ API ====== */
+/* ====== API BASE ====== */
+const API_BASE = "http://26.51.197.241:4000";
+// const API_BASE = "http://localhost:4000";
+
+/* ====== STATE DASHBOARD ====== */
 const loading = ref(false);
 const errorMsg = ref("");
 
-// batch & status
+// status gốc từ BE (operating / standby / offline...)
+const rawMachineStatus = ref("offline");
+// batch
 const batchId = ref("");
-const machineStatus = ref("offline");
 
 // steel ball
 const steelBallWeight = ref(null);
@@ -33,20 +38,24 @@ const power = ref({
   dustCollector: null,
 });
 
-/* ====== ALARM POPUP ====== */
+/* ====== ALARMS ====== */
 const showAlarmModal = ref(false);
 const alarmRows = ref([]);
 const alarmLoading = ref(false);
 const alarmError = ref("");
 
-/* ====== STATUS TEXT & COLOR ====== */
-const statusText = {
-  operating: "Operating",
-  standby: "Standby",
-  abnormal: "Abnormal",
-  offline: "Offline",
-};
+/* ====== ACTIVE ALARM & MACHINE STATUS ====== */
+// có alarm chưa có end_time thì coi là đang active
+const hasActiveAlarm = computed(() =>
+  alarmRows.value.some((row) => !row.end || row.end === "")
+);
 
+// status hiển thị trên dashboard
+const machineStatus = computed(() =>
+  hasActiveAlarm.value ? "abnormal" : rawMachineStatus.value
+);
+
+/* ====== STATUS CLASS ====== */
 const statusClass = computed(() => {
   switch (machineStatus.value) {
     case "operating":
@@ -61,14 +70,11 @@ const statusClass = computed(() => {
 });
 
 /* ====== ALERT BUTTON ====== */
-const alertIsActive = computed(() => machineStatus.value === "abnormal");
+const alertIsActive = computed(() => hasActiveAlarm.value);
 
-/* ====== FORMAT NUMBER ====== */
-const formatNumber = (val) => {
-  if (val === null || val === undefined) return "--";
-  const num = Number(val);
-  return Number.isNaN(num) ? "--" : num.toFixed(2);
-};
+/* FORMAT NUMBER */
+const formatNumber = (v) =>
+  v == null ? "--" : isNaN(Number(v)) ? "--" : Number(v).toFixed(2);
 
 const steelBallWeightDisplay = computed(() =>
   steelBallWeight.value == null
@@ -76,20 +82,15 @@ const steelBallWeightDisplay = computed(() =>
     : Number(steelBallWeight.value).toFixed(2)
 );
 
-/* ====== DANGER CHECK (> 500) ====== */
-/* Dùng chung cho tất cả ô số (trừ Steel Ball & Machine Status) */
-const isDanger = (val) => {
-  return val != null && Number(val) > 500;
-};
+const isDanger = (v) => v != null && Number(v) > 500;
 
-/* ====== FETCH DASHBOARD (NO LOGIN) ====== */
+/* ====== FETCH DASHBOARD ====== */
 const fetchDashboard = async () => {
   loading.value = true;
   errorMsg.value = "";
 
   try {
-    const res = await fetch("http://localhost:4000/api/dashboard", {
-    // const res = await fetch("http://26.51.197.241:4000/api/dashboard", {
+    const res = await fetch(`${API_BASE}/api/dashboard`, {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -101,40 +102,37 @@ const fetchDashboard = async () => {
     const data = await res.json();
 
     batchId.value = data.batchId || "";
-    machineStatus.value = data.machineStatus || "offline";
+    rawMachineStatus.value = data.machineStatus || "offline";
+
     steelBallWeight.value = data.steelBallTotal ?? data.steelBallWeight ?? null;
-    voltage.value = { powerSupply: data.voltage?.powerSupply ?? null };
-    rpm.value = {
-      impeller1: data.rpm?.impeller1 ?? null,
-      impeller2: data.rpm?.impeller2 ?? null,
-    };
-    current.value = {
-      powerSupply: data.current?.powerSupply ?? null,
-      impeller1: data.current?.impeller1 ?? null,
-      impeller2: data.current?.impeller2 ?? null,
-      dustCollector: data.current?.dustCollector ?? null,
-    };
-    power.value = {
-      powerSupply: data.power?.powerSupply ?? null,
-      impeller1: data.power?.impeller1 ?? null,
-      impeller2: data.power?.impeller2 ?? null,
-      dustCollector: data.power?.dustCollector ?? null,
-    };
-  } catch (err) {
-    errorMsg.value = err.message;
+
+    voltage.value.powerSupply = data.voltage?.powerSupply ?? null;
+    rpm.value.impeller1 = data.rpm?.impeller1 ?? null;
+    rpm.value.impeller2 = data.rpm?.impeller2 ?? null;
+
+    current.value.powerSupply = data.current?.powerSupply ?? null;
+    current.value.impeller1 = data.current?.impeller1 ?? null;
+    current.value.impeller2 = data.current?.impeller2 ?? null;
+    current.value.dustCollector = data.current?.dustCollector ?? null;
+
+    power.value.powerSupply = data.power?.powerSupply ?? null;
+    power.value.impeller1 = data.power?.impeller1 ?? null;
+    power.value.impeller2 = data.power?.impeller2 ?? null;
+    power.value.dustCollector = data.power?.dustCollector ?? null;
+  } catch (e) {
+    errorMsg.value = e.message;
   } finally {
     loading.value = false;
   }
 };
 
-/* ====== FETCH ALARMS (NO LOGIN) ====== */
+/* ====== FETCH ALARMS ====== */
 const fetchAlarms = async () => {
   alarmLoading.value = true;
   alarmError.value = "";
 
   try {
-    const res = await fetch("http://localhost:4000/api/alarms", {
-    // const res = await fetch("http://26.51.197.241:4000/api/alarms", {
+    const res = await fetch(`${API_BASE}/api/alarms`, {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -144,10 +142,29 @@ const fetchAlarms = async () => {
     }
 
     alarmRows.value = await res.json();
-  } catch (err) {
-    alarmError.value = err.message;
+    // không cần set machineStatus ở đây, đã có computed hasActiveAlarm
+  } catch (e) {
+    alarmError.value = e.message;
   } finally {
     alarmLoading.value = false;
+  }
+};
+
+/* ====== ACK ONE ALARM (tick ✓) ====== */
+const ackAlarm = async (id) => {
+  try {
+    const res = await fetch(`${API_BASE}/api/alarms/ack/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) throw new Error("Failed to acknowledge");
+
+    // reload lại để ô End Time đổi màu xám / status về normal
+    await fetchAlarms();
+    await fetchDashboard();
+  } catch (e) {
+    console.error("ACK error:", e);
   }
 };
 
@@ -158,6 +175,7 @@ const openAlarmModal = async () => {
 
 onMounted(() => {
   fetchDashboard();
+  fetchAlarms();
 });
 </script>
 
@@ -166,6 +184,7 @@ onMounted(() => {
     <TimeClock class="sp-time" size="normal" align="left" />
     <LanguageSwitch />
   </div>
+
   <div class="dashboard-content">
     <p v-if="errorMsg" style="color: red; margin-bottom: 4px">
       {{ errorMsg }}
@@ -180,6 +199,7 @@ onMounted(() => {
         >
           {{ t("alert") }}
         </button>
+
         <div class="batch">
           {{ t("batchInProgress") }}:
           <strong>{{ batchId || "----" }}</strong>
@@ -218,7 +238,10 @@ onMounted(() => {
         </div>
         <div class="metric-card">
           <div class="metric-label blue">{{ t("powerSupply") }}</div>
-          <div class="metric-value" :class="{ danger: isDanger(voltage.powerSupply) }">
+          <div
+            class="metric-value"
+            :class="{ danger: isDanger(voltage.powerSupply) }"
+          >
             {{ formatNumber(voltage.powerSupply) }}
           </div>
         </div>
@@ -229,13 +252,19 @@ onMounted(() => {
         <div class="metric-row-2">
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller1") }}</div>
-            <div class="metric-value" :class="{ danger: isDanger(rpm.impeller1) }">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(rpm.impeller1) }"
+            >
               {{ formatNumber(rpm.impeller1) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller2") }}</div>
-            <div class="metric-value" :class="{ danger: isDanger(rpm.impeller2) }">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(rpm.impeller2) }"
+            >
               {{ formatNumber(rpm.impeller2) }}
             </div>
           </div>
@@ -250,7 +279,10 @@ onMounted(() => {
         <div class="metric-row-4">
           <div class="metric-card">
             <div class="metric-label blue">{{ t("powerSupply") }}</div>
-            <div class="metric-value" :class="{ danger: isDanger(current.powerSupply) }">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(current.powerSupply) }"
+            >
               {{ formatNumber(current.powerSupply) }}
             </div>
           </div>
@@ -265,7 +297,10 @@ onMounted(() => {
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller2") }}</div>
-            <div class="metric-value" :class="{ danger: isDanger(current.impeller2) }">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(current.impeller2) }"
+            >
               {{ formatNumber(current.impeller2) }}
             </div>
           </div>
@@ -286,19 +321,28 @@ onMounted(() => {
         <div class="metric-row-4">
           <div class="metric-card">
             <div class="metric-label blue">{{ t("powerSupply") }}</div>
-            <div class="metric-value" :class="{ danger: isDanger(power.powerSupply) }">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(power.powerSupply) }"
+            >
               {{ formatNumber(power.powerSupply) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller1") }}</div>
-            <div class="metric-value" :class="{ danger: isDanger(power.impeller1) }">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(power.impeller1) }"
+            >
               {{ formatNumber(power.impeller1) }}
             </div>
           </div>
           <div class="metric-card">
             <div class="metric-label">{{ t("impeller2") }}</div>
-            <div class="metric-value" :class="{ danger: isDanger(power.impeller2) }">
+            <div
+              class="metric-value"
+              :class="{ danger: isDanger(power.impeller2) }"
+            >
               {{ formatNumber(power.impeller2) }}
             </div>
           </div>
@@ -315,32 +359,38 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- ALARM POPUP -->
+    <!-- ALARM MODAL -->
     <div v-if="showAlarmModal" class="alarm-backdrop">
       <div class="alarm-modal">
         <div class="alarm-header">
           <span class="alarm-title">{{ t("alarmHistory") }}</span>
-          <button class="alarm-close" @click="showAlarmModal = false">✕</button>
+          <button class="alarm-close" @click="showAlarmModal = false">
+            ✕
+          </button>
         </div>
 
         <div class="alarm-table-wrapper">
           <div v-if="alarmLoading" class="alarm-loading">Loading...</div>
-          <div v-else-if="alarmError" class="alarm-error">{{ alarmError }}</div>
+          <div v-else-if="alarmError" class="alarm-error">
+            {{ alarmError }}
+          </div>
           <table v-else class="alarm-table">
             <thead>
               <tr>
-                <th style="width: 50px">{{ t("alarmNo") }}</th>
+                <th>No</th>
                 <th>{{ t("alarmType") }}</th>
                 <th>{{ t("alarmLocation") }}</th>
                 <th>{{ t("alarmStartTime") }}</th>
                 <th>{{ t("alarmEndTime") }}</th>
                 <th>{{ t("alarmDetails") }}</th>
+                <th>{{ t("alarmAck") }}</th>
               </tr>
             </thead>
+
             <tbody>
               <tr
                 v-for="(row, index) in alarmRows"
-                :key="index"
+                :key="row.id"
                 :class="{ 'alarm-row-alt': index % 2 === 0 }"
               >
                 <td class="center">{{ index + 1 }}</td>
@@ -349,6 +399,19 @@ onMounted(() => {
                 <td>{{ row.start }}</td>
                 <td>{{ row.end }}</td>
                 <td class="center">{{ row.details }}</td>
+
+                <td class="center">
+                  <button
+                    v-if="!row.end"
+                    class="ack-btn-active"
+                    @click="ackAlarm(row.id)"
+                  >
+                    ✓
+                  </button>
+                  <button v-else class="ack-btn-disabled" disabled>
+                    ✓
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -619,5 +682,30 @@ onMounted(() => {
 .center {
   text-align: center;
   padding: 12px 10px;
+}
+
+/* Tick nút ack */
+.ack-btn-active {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: #4caf50;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+.ack-btn-active:hover {
+  background: #43a047;
+}
+
+.ack-btn-disabled {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: #999;
+  color: #eee;
+  cursor: not-allowed;
 }
 </style>

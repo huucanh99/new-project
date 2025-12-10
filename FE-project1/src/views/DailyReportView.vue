@@ -119,8 +119,8 @@ const batchInProgress = ref("");
 const loading = ref(false);
 const error = ref("");
 
-// const API_BASE = "http://26.51.197.241:4000";
-const API_BASE = "http://localhost:4000";
+const API_BASE = "http://26.51.197.241:4000";
+// const API_BASE = "http://localhost:4000";
 
 /* ====== helper format số (làm tròn FE) ====== */
 const format2 = (value) => {
@@ -163,7 +163,6 @@ const loadDailyReport = async () => {
     powerTimeData.value = data.powerTimeData || [];
     // ====== STEEL time-series (Batch Summary) ======
     steelLineData.value = data.steelLineData || [];
-    
 
     // ====== BATCH LEVEL (Daily / Shift) ======
     powerBatches.value = data.powerBatches || [];
@@ -211,20 +210,32 @@ const intervalOptions = [
 const selectedPowerInterval = ref(10); // left chart
 const selectedSteelInterval = ref(10); // right chart
 
-/* ====== Line chart chung ====== */
-const lineChartWidth = 400;
+/* ====== Line chart config ====== */
 const lineChartHeight = 168;
-const lineChartPaddingX = 12;
-const lineXOffset = 15; // đẩy line qua phải một chút cho đỡ chồng
-
-const clampX = (x) => Math.min(lineChartWidth - 10, x);
+const MIN_SVG_WIDTH = 400;
+const LEFT_PADDING = 30;
+const RIGHT_PADDING = 20;
+const POINT_SPACING = 60; // 1 block thời gian (10m/20m) cách nhau 60px
 
 /* ====== TICKS DEFAULT ====== */
 const defaultTicks = [35, 30, 25, 20, 15, 10, 5, 0];
 
-/* ================= POWER LINE (Batch Summary) ================= */
+const parseTimeToMinutes = (timeStr) => {
+  const [hStr, mStr] = (timeStr || "").split(":");
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+};
 
-/* AGGREGATE POWER THEO INTERVAL */
+const formatMinutesToHHMM = (total) => {
+  const h = String(Math.floor(total / 60)).padStart(2, "0");
+  const m = String(total % 60).padStart(2, "0");
+  return `${h}:${m}`;
+};
+
+/* ================= AGGREGATE POWER (Batch Summary) ================= */
+
 const aggregatedPowerTimeData = computed(() => {
   if (selectedReport.value !== "Batch Summary") return [];
 
@@ -232,7 +243,7 @@ const aggregatedPowerTimeData = computed(() => {
   const interval = selectedPowerInterval.value;
   if (!raw.length || !interval) return [];
 
-  const buckets = {}; // { "HH:MM": sumPower }
+  const buckets = {};
 
   raw.forEach((p) => {
     const [hStr, mStr] = (p.time || "").split(":");
@@ -242,9 +253,7 @@ const aggregatedPowerTimeData = computed(() => {
 
     const total = h * 60 + m;
     const bucketStart = Math.floor(total / interval) * interval;
-    const bh = String(Math.floor(bucketStart / 60)).padStart(2, "0");
-    const bm = String(bucketStart % 60).padStart(2, "0");
-    const key = `${bh}:${bm}`;
+    const key = formatMinutesToHHMM(bucketStart);
 
     if (!buckets[key]) buckets[key] = 0;
     buckets[key] += Number(p.value ?? p.power_kw ?? 0) || 0;
@@ -258,11 +267,31 @@ const aggregatedPowerTimeData = computed(() => {
     }));
 });
 
-/* MAX & TICKS CHO POWER Y-AXIS (Batch Summary) */
+/* timeline POWER: các mốc 00:00, 00:10, 00:20,... theo interval */
+const powerTimeline = computed(() => {
+  if (selectedReport.value !== "Batch Summary") return [];
+  const data = aggregatedPowerTimeData.value;
+  if (!data.length) return [];
+
+  const mins = data
+    .map((d) => parseTimeToMinutes(d.time))
+    .filter((v) => v != null);
+
+  const minMinute = Math.min(...mins);
+  const maxMinute = Math.max(...mins);
+  const step = selectedPowerInterval.value;
+
+  const result = [];
+  for (let t = minMinute; t <= maxMinute; t += step) {
+    result.push(formatMinutesToHHMM(t));
+  }
+  return result;
+});
+
 const powerMaxValue = computed(() => {
   if (selectedReport.value !== "Batch Summary") return 35;
 
-  let baseMax = 14; // default cho 10 phút
+  let baseMax = 14;
   if (selectedPowerInterval.value === 20) baseMax = 28;
 
   const maxData = Math.max(
@@ -274,12 +303,10 @@ const powerMaxValue = computed(() => {
 });
 
 const powerLineTicks = computed(() => {
-  if (selectedReport.value !== "Batch Summary") {
-    return defaultTicks;
-  }
+  if (selectedReport.value !== "Batch Summary") return defaultTicks;
 
   const maxV = powerMaxValue.value;
-  const step = maxV / 7; // 8 tick (7 khoảng)
+  const step = maxV / 7;
   const ticks = [];
   for (let i = 7; i >= 0; i--) {
     ticks.push(Math.round(step * i));
@@ -290,38 +317,41 @@ const powerLineTicks = computed(() => {
 const powerValueToY = (v) =>
   lineChartHeight - (v / powerMaxValue.value) * lineChartHeight;
 
-/* ZOOM CHO POWER LINE (Batch Summary) */
+/* width POWER: số slot * POINT_SPACING */
+const powerBaseWidth = computed(() => {
+  const n = powerTimeline.value.length;
+  if (n <= 1) return MIN_SVG_WIDTH;
+  return LEFT_PADDING + RIGHT_PADDING + (n - 1) * POINT_SPACING;
+});
+
 const powerZoom = ref(1);
 const minPowerZoom = 0.5;
 const maxPowerZoom = 5;
 
-const powerSvgWidth = computed(() => lineChartWidth * powerZoom.value);
+const powerSvgWidth = computed(
+  () => powerBaseWidth.value * powerZoom.value
+);
 
+/* điểm POWER: mỗi mốc timeline 1 point, cách nhau đều */
 const powerLinePoints = computed(() => {
-  const data = aggregatedPowerTimeData.value;
-  if (!data.length) return [];
+  if (selectedReport.value !== "Batch Summary") return [];
 
-  const innerWidth = lineChartWidth - lineChartPaddingX * 2;
+  const timeline = powerTimeline.value;
+  const n = timeline.length;
+  if (!n) return [];
 
-  if (data.length === 1) {
-    return [
-      {
-        ...data[0],
-        x: clampX(lineChartWidth / 2 + lineXOffset),
-        y: powerValueToY(data[0].value),
-      },
-    ];
-  }
+  const innerWidth = powerBaseWidth.value - LEFT_PADDING - RIGHT_PADDING;
+  const stepX = n > 1 ? innerWidth / (n - 1) : 0;
 
-  const stepX = innerWidth / (data.length - 1);
+  const valueMap = new Map(
+    aggregatedPowerTimeData.value.map((p) => [p.time, p.value])
+  );
 
-  return data.map((p, idx) => {
-    const rawX = lineChartPaddingX + idx * stepX + lineXOffset;
-    return {
-      ...p,
-      x: clampX(rawX),
-      y: powerValueToY(p.value),
-    };
+  return timeline.map((time, idx) => {
+    const value = valueMap.get(time) ?? 0;
+    const x = LEFT_PADDING + idx * stepX;
+    const y = powerValueToY(value);
+    return { time, value, x, y };
   });
 });
 
@@ -329,7 +359,9 @@ const powerLinePointsStr = computed(() =>
   powerLinePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
 );
 
-// zoom wheel cho power
+/* label time dưới: đúng theo timeline */
+const powerTimeLabels = computed(() => powerTimeline.value);
+
 const onPowerWheel = (e) => {
   if (selectedReport.value !== "Batch Summary") return;
   e.preventDefault();
@@ -338,26 +370,8 @@ const onPowerWheel = (e) => {
   powerZoom.value = Math.min(maxPowerZoom, Math.max(minPowerZoom, next));
 };
 
-// Label thời gian cho power (giãn ra cho đẹp)
-const powerTimeLabels = computed(() => {
-  const data = aggregatedPowerTimeData.value;
-  if (!data.length) return [];
+/* ================= STEEL: giống POWER ================= */
 
-  const interval = selectedPowerInterval.value;
-  let step = 1;
-
-  if (interval === 10) {
-    step = 2;
-  } else {
-    step = 1;
-  }
-
-  return data.filter((_, idx) => idx % step === 0);
-});
-
-/* ================= STEEL LINE (Batch Summary) ================= */
-
-/* AGGREGATE STEEL THEO INTERVAL */
 const aggregatedSteelTimeData = computed(() => {
   if (selectedReport.value !== "Batch Summary") return [];
 
@@ -365,7 +379,7 @@ const aggregatedSteelTimeData = computed(() => {
   const interval = selectedSteelInterval.value;
   if (!raw.length || !interval) return [];
 
-  const buckets = {}; // { "HH:MM": sumSteel }
+  const buckets = {};
 
   raw.forEach((p) => {
     const [hStr, mStr] = (p.time || "").split(":");
@@ -375,9 +389,7 @@ const aggregatedSteelTimeData = computed(() => {
 
     const total = h * 60 + m;
     const bucketStart = Math.floor(total / interval) * interval;
-    const bh = String(Math.floor(bucketStart / 60)).padStart(2, "0");
-    const bm = String(bucketStart % 60).padStart(2, "0");
-    const key = `${bh}:${bm}`;
+    const key = formatMinutesToHHMM(bucketStart);
 
     if (!buckets[key]) buckets[key] = 0;
     buckets[key] += Number(p.value ?? p.steel_kg ?? 0) || 0;
@@ -391,7 +403,26 @@ const aggregatedSteelTimeData = computed(() => {
     }));
 });
 
-/* MAX & TICKS CHO STEEL Y-AXIS (Batch Summary) */
+const steelTimeline = computed(() => {
+  if (selectedReport.value !== "Batch Summary") return [];
+  const data = aggregatedSteelTimeData.value;
+  if (!data.length) return [];
+
+  const mins = data
+    .map((d) => parseTimeToMinutes(d.time))
+    .filter((v) => v != null);
+
+  const minMinute = Math.min(...mins);
+  const maxMinute = Math.max(...mins);
+  const step = selectedSteelInterval.value;
+
+  const result = [];
+  for (let t = minMinute; t <= maxMinute; t += step) {
+    result.push(formatMinutesToHHMM(t));
+  }
+  return result;
+});
+
 const steelMaxValue = computed(() => {
   if (selectedReport.value !== "Batch Summary") return 35;
 
@@ -407,9 +438,7 @@ const steelMaxValue = computed(() => {
 });
 
 const steelLineTicks = computed(() => {
-  if (selectedReport.value !== "Batch Summary") {
-    return defaultTicks;
-  }
+  if (selectedReport.value !== "Batch Summary") return defaultTicks;
 
   const maxV = steelMaxValue.value;
   const step = maxV / 7;
@@ -423,38 +452,39 @@ const steelLineTicks = computed(() => {
 const steelValueToY = (v) =>
   lineChartHeight - (v / steelMaxValue.value) * lineChartHeight;
 
-/* ZOOM CHO STEEL LINE (Batch Summary) */
+const steelBaseWidth = computed(() => {
+  const n = steelTimeline.value.length;
+  if (n <= 1) return MIN_SVG_WIDTH;
+  return LEFT_PADDING + RIGHT_PADDING + (n - 1) * POINT_SPACING;
+});
+
 const steelZoom = ref(1);
 const minSteelZoom = 0.5;
 const maxSteelZoom = 5;
 
-const steelSvgWidth = computed(() => lineChartWidth * steelZoom.value);
+const steelSvgWidth = computed(
+  () => steelBaseWidth.value * steelZoom.value
+);
 
 const steelLinePoints = computed(() => {
-  const data = aggregatedSteelTimeData.value;
-  if (!data.length) return [];
+  if (selectedReport.value !== "Batch Summary") return [];
 
-  const innerWidth = lineChartWidth - lineChartPaddingX * 2;
+  const timeline = steelTimeline.value;
+  const n = timeline.length;
+  if (!n) return [];
 
-  if (data.length === 1) {
-    return [
-      {
-        ...data[0],
-        x: clampX(lineChartWidth / 2 + lineXOffset),
-        y: steelValueToY(data[0].value),
-      },
-    ];
-  }
+  const innerWidth = steelBaseWidth.value - LEFT_PADDING - RIGHT_PADDING;
+  const stepX = n > 1 ? innerWidth / (n - 1) : 0;
 
-  const stepX = innerWidth / (data.length - 1);
+  const valueMap = new Map(
+    aggregatedSteelTimeData.value.map((p) => [p.time, p.value])
+  );
 
-  return data.map((p, idx) => {
-    const rawX = lineChartPaddingX + idx * stepX + lineXOffset;
-    return {
-      ...p,
-      x: clampX(rawX),
-      y: steelValueToY(p.value),
-    };
+  return timeline.map((time, idx) => {
+    const value = valueMap.get(time) ?? 0;
+    const x = LEFT_PADDING + idx * stepX;
+    const y = steelValueToY(value);
+    return { time, value, x, y };
   });
 });
 
@@ -462,7 +492,8 @@ const steelLinePointsStr = computed(() =>
   steelLinePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
 );
 
-// zoom wheel cho steel
+const steelTimeLabels = computed(() => steelTimeline.value);
+
 const onSteelWheel = (e) => {
   if (selectedReport.value !== "Batch Summary") return;
   e.preventDefault();
@@ -470,23 +501,6 @@ const onSteelWheel = (e) => {
   const next = steelZoom.value * factor;
   steelZoom.value = Math.min(maxSteelZoom, Math.max(minSteelZoom, next));
 };
-
-// Label thời gian cho steel (giãn ra cho đẹp)
-const steelTimeLabels = computed(() => {
-  const data = aggregatedSteelTimeData.value;
-  if (!data.length) return [];
-
-  const interval = selectedSteelInterval.value;
-  let step = 1;
-
-  if (interval === 10) {
-    step = 2;
-  } else {
-    step = 1;
-  }
-
-  return data.filter((_, idx) => idx % step === 0);
-});
 
 /* ====== TOTAL & DISPLAY CHO STEEL / POWER ====== */
 const steelTotal = computed(() => {
@@ -718,14 +732,14 @@ watch(
               >
                 <svg
                   class="line-chart-svg"
-                  :viewBox="`0 -10 ${lineChartWidth} ${lineChartHeight + 10}`"
+                  :viewBox="`0 -10 ${powerBaseWidth} ${lineChartHeight + 10}`"
                 >
                   <!-- grid + Y ticks + label -->
                   <g v-for="tick in powerLineTicks" :key="tick">
                     <line
                       :x1="0"
                       :y1="powerValueToY(tick)"
-                      :x2="lineChartWidth"
+                      :x2="powerBaseWidth"
                       :y2="powerValueToY(tick)"
                       stroke="#e0e0e0"
                       stroke-width="1"
@@ -767,8 +781,8 @@ watch(
 
                 <!-- time labels, scroll cùng chart -->
                 <div class="line-chart-time-row power-time-row">
-                  <span v-for="(p, idx) in powerTimeLabels" :key="idx">
-                    {{ p.time }}
+                  <span v-for="(time, idx) in powerTimeLabels" :key="idx">
+                    {{ time }}
                   </span>
                 </div>
               </div>
@@ -862,13 +876,13 @@ watch(
               >
                 <svg
                   class="line-chart-svg"
-                  :viewBox="`0 -10 ${lineChartWidth} ${lineChartHeight + 10}`"
+                  :viewBox="`0 -10 ${steelBaseWidth} ${lineChartHeight + 10}`"
                 >
                   <g v-for="tick in steelLineTicks" :key="tick">
                     <line
                       :x1="0"
                       :y1="steelValueToY(tick)"
-                      :x2="lineChartWidth"
+                      :x2="steelBaseWidth"
                       :y2="steelValueToY(tick)"
                       stroke="#e0e0e0"
                       stroke-width="1"
@@ -907,8 +921,8 @@ watch(
                 </svg>
 
                 <div class="line-chart-time-row">
-                  <span v-for="(p, idx) in steelTimeLabels" :key="idx">
-                    {{ p.time }}
+                  <span v-for="(time, idx) in steelTimeLabels" :key="idx">
+                    {{ time }}
                   </span>
                 </div>
               </div>
@@ -1578,14 +1592,14 @@ watch(
 /* TIME row dưới khung chart */
 .line-chart-time-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 0 8px;
   margin-top: 4px;
   font-size: 10px;
 }
 
 .line-chart-time-row span {
-  min-width: 0;
+  flex: 0 0 60px; /* khớp với POINT_SPACING */
   text-align: center;
 }
 
