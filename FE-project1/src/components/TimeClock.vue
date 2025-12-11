@@ -53,7 +53,7 @@ onUnmounted(() => {
 
 <style scoped>
 .time-clock {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* size */
@@ -72,7 +72,6 @@ onUnmounted(() => {
 /* align */
 .time-clock--align-left {
   text-align: left;
-  margin: -15px 0px -15px 0px;
 }
 
 .time-clock--align-center {

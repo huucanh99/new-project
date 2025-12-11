@@ -415,10 +415,11 @@ watch(
 
 /* Card chung */
 .sp-card {
-  background: #d5deea;
-  border-radius: 8px;
+  background: rgb(214, 220, 229);
+  border-radius: 12px;
   padding: 10px 16px 16px;
   margin-bottom: 16px;
+  margin-top: 14px;
 }
 
 .sp-card-header {
@@ -429,7 +430,7 @@ watch(
 }
 
 .sp-title {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
   margin: 0;
 }
@@ -440,7 +441,7 @@ watch(
   border-radius: 999px;
   background: rgb(157, 195, 230);
   color: black;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -463,8 +464,8 @@ watch(
 }
 
 .sp-type-label {
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .sp-select {
@@ -473,6 +474,7 @@ watch(
   font-size: 16px;
   border: 1px solid white;
   background: #fff;
+  font-weight: 600;
 }
 
 /* Alarm layout */
@@ -487,7 +489,7 @@ watch(
 }
 
 .sp-row-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.3;
   padding-bottom: 10px;
@@ -524,10 +526,11 @@ watch(
   border: 1px solid white;
   font-size: 16px;
   background: #fff;
+  font-weight: 600;
 }
 
 .sp-unit {
-  font-weight: 500;
+  font-weight: 600;
   width: 40px;
   display: inline-block;
 }

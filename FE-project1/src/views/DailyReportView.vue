@@ -1,7 +1,37 @@
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
 import { useI18n } from "@/languages/i18n";
+
+/* ====== Chart.js + Zoom plugin ====== */
+import {
+  Chart as ChartJS,
+  LineController,
+  LineElement,
+  PointElement,
+  LinearScale,
+  CategoryScale,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
+
+ChartJS.register(
+  LineController,
+  LineElement,
+  PointElement,
+  LinearScale,
+  CategoryScale,
+  Tooltip,
+  Legend,
+  zoomPlugin
+);
+
+/* canvas & instance cho 2 chart Batch Summary */
+const powerChartCanvas = ref(null);
+const steelChartCanvas = ref(null);
+const powerChartInstance = ref(null);
+const steelChartInstance = ref(null);
 
 /* ====== i18n ====== */
 const i18n = useI18n();
@@ -200,308 +230,6 @@ const maxHeight = 210;
 const maxBarValue = 35;
 const barHeight = (v) => `${(v / maxBarValue) * maxHeight}px`;
 
-/* ====== Interval cho Batch Summary (Power & Steel) ====== */
-const intervalOptions = [
-  { value: 10, label: "10 min" },
-  { value: 20, label: "20 min" },
-];
-
-// tách riêng 2 nút 10m/20m cho 2 chart
-const selectedPowerInterval = ref(10); // left chart
-const selectedSteelInterval = ref(10); // right chart
-
-/* ====== Line chart config ====== */
-const lineChartHeight = 168;
-const MIN_SVG_WIDTH = 400;
-const LEFT_PADDING = 30;
-const RIGHT_PADDING = 20;
-const POINT_SPACING = 60; // 1 block thời gian (10m/20m) cách nhau 60px
-
-/* ====== TICKS DEFAULT ====== */
-const defaultTicks = [35, 30, 25, 20, 15, 10, 5, 0];
-
-const parseTimeToMinutes = (timeStr) => {
-  const [hStr, mStr] = (timeStr || "").split(":");
-  const h = parseInt(hStr, 10);
-  const m = parseInt(mStr, 10);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-};
-
-const formatMinutesToHHMM = (total) => {
-  const h = String(Math.floor(total / 60)).padStart(2, "0");
-  const m = String(total % 60).padStart(2, "0");
-  return `${h}:${m}`;
-};
-
-/* ================= AGGREGATE POWER (Batch Summary) ================= */
-
-const aggregatedPowerTimeData = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return [];
-
-  const raw = powerTimeData.value;
-  const interval = selectedPowerInterval.value;
-  if (!raw.length || !interval) return [];
-
-  const buckets = {};
-
-  raw.forEach((p) => {
-    const [hStr, mStr] = (p.time || "").split(":");
-    const h = parseInt(hStr, 10);
-    const m = parseInt(mStr, 10);
-    if (Number.isNaN(h) || Number.isNaN(m)) return;
-
-    const total = h * 60 + m;
-    const bucketStart = Math.floor(total / interval) * interval;
-    const key = formatMinutesToHHMM(bucketStart);
-
-    if (!buckets[key]) buckets[key] = 0;
-    buckets[key] += Number(p.value ?? p.power_kw ?? 0) || 0;
-  });
-
-  return Object.keys(buckets)
-    .sort()
-    .map((time) => ({
-      time,
-      value: Number(buckets[time].toFixed(2)),
-    }));
-});
-
-/* timeline POWER: các mốc 00:00, 00:10, 00:20,... theo interval */
-const powerTimeline = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return [];
-  const data = aggregatedPowerTimeData.value;
-  if (!data.length) return [];
-
-  const mins = data
-    .map((d) => parseTimeToMinutes(d.time))
-    .filter((v) => v != null);
-
-  const minMinute = Math.min(...mins);
-  const maxMinute = Math.max(...mins);
-  const step = selectedPowerInterval.value;
-
-  const result = [];
-  for (let t = minMinute; t <= maxMinute; t += step) {
-    result.push(formatMinutesToHHMM(t));
-  }
-  return result;
-});
-
-const powerMaxValue = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return 35;
-
-  let baseMax = 14;
-  if (selectedPowerInterval.value === 20) baseMax = 28;
-
-  const maxData = Math.max(
-    0,
-    ...aggregatedPowerTimeData.value.map((p) => p.value || 0)
-  );
-
-  return Math.max(baseMax, Math.ceil(maxData));
-});
-
-const powerLineTicks = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return defaultTicks;
-
-  const maxV = powerMaxValue.value;
-  const step = maxV / 7;
-  const ticks = [];
-  for (let i = 7; i >= 0; i--) {
-    ticks.push(Math.round(step * i));
-  }
-  return ticks;
-});
-
-const powerValueToY = (v) =>
-  lineChartHeight - (v / powerMaxValue.value) * lineChartHeight;
-
-/* width POWER: số slot * POINT_SPACING */
-const powerBaseWidth = computed(() => {
-  const n = powerTimeline.value.length;
-  if (n <= 1) return MIN_SVG_WIDTH;
-  return LEFT_PADDING + RIGHT_PADDING + (n - 1) * POINT_SPACING;
-});
-
-const powerZoom = ref(1);
-const minPowerZoom = 0.5;
-const maxPowerZoom = 5;
-
-const powerSvgWidth = computed(
-  () => powerBaseWidth.value * powerZoom.value
-);
-
-/* điểm POWER: mỗi mốc timeline 1 point, cách nhau đều */
-const powerLinePoints = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return [];
-
-  const timeline = powerTimeline.value;
-  const n = timeline.length;
-  if (!n) return [];
-
-  const innerWidth = powerBaseWidth.value - LEFT_PADDING - RIGHT_PADDING;
-  const stepX = n > 1 ? innerWidth / (n - 1) : 0;
-
-  const valueMap = new Map(
-    aggregatedPowerTimeData.value.map((p) => [p.time, p.value])
-  );
-
-  return timeline.map((time, idx) => {
-    const value = valueMap.get(time) ?? 0;
-    const x = LEFT_PADDING + idx * stepX;
-    const y = powerValueToY(value);
-    return { time, value, x, y };
-  });
-});
-
-const powerLinePointsStr = computed(() =>
-  powerLinePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
-);
-
-/* label time dưới: đúng theo timeline */
-const powerTimeLabels = computed(() => powerTimeline.value);
-
-const onPowerWheel = (e) => {
-  if (selectedReport.value !== "Batch Summary") return;
-  e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 0.9;
-  const next = powerZoom.value * factor;
-  powerZoom.value = Math.min(maxPowerZoom, Math.max(minPowerZoom, next));
-};
-
-/* ================= STEEL: giống POWER ================= */
-
-const aggregatedSteelTimeData = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return [];
-
-  const raw = steelLineData.value;
-  const interval = selectedSteelInterval.value;
-  if (!raw.length || !interval) return [];
-
-  const buckets = {};
-
-  raw.forEach((p) => {
-    const [hStr, mStr] = (p.time || "").split(":");
-    const h = parseInt(hStr, 10);
-    const m = parseInt(mStr, 10);
-    if (Number.isNaN(h) || Number.isNaN(m)) return;
-
-    const total = h * 60 + m;
-    const bucketStart = Math.floor(total / interval) * interval;
-    const key = formatMinutesToHHMM(bucketStart);
-
-    if (!buckets[key]) buckets[key] = 0;
-    buckets[key] += Number(p.value ?? p.steel_kg ?? 0) || 0;
-  });
-
-  return Object.keys(buckets)
-    .sort()
-    .map((time) => ({
-      time,
-      value: Number(buckets[time].toFixed(2)),
-    }));
-});
-
-const steelTimeline = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return [];
-  const data = aggregatedSteelTimeData.value;
-  if (!data.length) return [];
-
-  const mins = data
-    .map((d) => parseTimeToMinutes(d.time))
-    .filter((v) => v != null);
-
-  const minMinute = Math.min(...mins);
-  const maxMinute = Math.max(...mins);
-  const step = selectedSteelInterval.value;
-
-  const result = [];
-  for (let t = minMinute; t <= maxMinute; t += step) {
-    result.push(formatMinutesToHHMM(t));
-  }
-  return result;
-});
-
-const steelMaxValue = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return 35;
-
-  let baseMax = 14;
-  if (selectedSteelInterval.value === 20) baseMax = 28;
-
-  const maxData = Math.max(
-    0,
-    ...aggregatedSteelTimeData.value.map((p) => p.value || 0)
-  );
-
-  return Math.max(baseMax, Math.ceil(maxData));
-});
-
-const steelLineTicks = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return defaultTicks;
-
-  const maxV = steelMaxValue.value;
-  const step = maxV / 7;
-  const ticks = [];
-  for (let i = 7; i >= 0; i--) {
-    ticks.push(Math.round(step * i));
-  }
-  return ticks;
-});
-
-const steelValueToY = (v) =>
-  lineChartHeight - (v / steelMaxValue.value) * lineChartHeight;
-
-const steelBaseWidth = computed(() => {
-  const n = steelTimeline.value.length;
-  if (n <= 1) return MIN_SVG_WIDTH;
-  return LEFT_PADDING + RIGHT_PADDING + (n - 1) * POINT_SPACING;
-});
-
-const steelZoom = ref(1);
-const minSteelZoom = 0.5;
-const maxSteelZoom = 5;
-
-const steelSvgWidth = computed(
-  () => steelBaseWidth.value * steelZoom.value
-);
-
-const steelLinePoints = computed(() => {
-  if (selectedReport.value !== "Batch Summary") return [];
-
-  const timeline = steelTimeline.value;
-  const n = timeline.length;
-  if (!n) return [];
-
-  const innerWidth = steelBaseWidth.value - LEFT_PADDING - RIGHT_PADDING;
-  const stepX = n > 1 ? innerWidth / (n - 1) : 0;
-
-  const valueMap = new Map(
-    aggregatedSteelTimeData.value.map((p) => [p.time, p.value])
-  );
-
-  return timeline.map((time, idx) => {
-    const value = valueMap.get(time) ?? 0;
-    const x = LEFT_PADDING + idx * stepX;
-    const y = steelValueToY(value);
-    return { time, value, x, y };
-  });
-});
-
-const steelLinePointsStr = computed(() =>
-  steelLinePoints.value.map((p) => `${p.x},${p.y}`).join(" ")
-);
-
-const steelTimeLabels = computed(() => steelTimeline.value);
-
-const onSteelWheel = (e) => {
-  if (selectedReport.value !== "Batch Summary") return;
-  e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 0.9;
-  const next = steelZoom.value * factor;
-  steelZoom.value = Math.min(maxSteelZoom, Math.max(minSteelZoom, next));
-};
-
 /* ====== TOTAL & DISPLAY CHO STEEL / POWER ====== */
 const steelTotal = computed(() => {
   if (selectedReport.value === "Batch Summary") {
@@ -541,6 +269,161 @@ const steelAfterDisplay = computed(() => {
 const steelTotalDisplay = computed(() => steelTotal.value.toFixed(2));
 const powerTotalDisplay = computed(() => powerTotal.value.toFixed(2));
 
+/* ====== DATA CHO CHART.JS (Batch Summary) – dùng raw data ====== */
+
+const powerChartJsData = computed(() => {
+  const labels = powerTimeData.value.map((p) => p.time || "");
+  const data = powerTimeData.value.map(
+    (p) => Number(p.value ?? p.power_kw ?? 0) || 0
+  );
+  return { labels, data };
+});
+
+const steelChartJsData = computed(() => {
+  const labels = steelLineData.value.map((p) => p.time || "");
+  const data = steelLineData.value.map(
+    (p) => Number(p.value ?? p.steel_kg ?? 0) || 0
+  );
+  return { labels, data };
+});
+
+/* ====== HÀM TẠO / UPDATE Chart.js ====== */
+
+const upsertPowerChart = () => {
+  // Nếu không phải Batch Summary thì phá chart (nếu có) rồi thoát
+  if (selectedReport.value !== "Batch Summary") {
+    if (powerChartInstance.value) {
+      powerChartInstance.value.destroy();
+      powerChartInstance.value = null;
+    }
+    return;
+  }
+
+  if (!powerChartCanvas.value) return;
+
+  const { labels, data } = powerChartJsData.value;
+  const canvas = powerChartCanvas.value;
+  const ctx = canvas.getContext("2d");
+
+  // ✅ Nếu Chart.js đang có chart gắn với canvas này thì destroy luôn
+  const existing = ChartJS.getChart(canvas);
+  if (existing) {
+    existing.destroy();
+  }
+
+  // ✅ Nếu mình lưu ref instance thì cũng destroy nốt cho chắc
+  if (powerChartInstance.value) {
+    powerChartInstance.value.destroy();
+    powerChartInstance.value = null;
+  }
+
+  powerChartInstance.value = new ChartJS(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Power (kW)",
+          data,
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { type: "category" },
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { display: false },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: "x",
+          },
+          pan: {
+            enabled: true,
+            mode: "x",
+          },
+        },
+      },
+    },
+  });
+};
+
+
+
+const upsertSteelChart = () => {
+  if (selectedReport.value !== "Batch Summary") {
+    if (steelChartInstance.value) {
+      steelChartInstance.value.destroy();
+      steelChartInstance.value = null;
+    }
+    return;
+  }
+
+  if (!steelChartCanvas.value) return;
+
+  const { labels, data } = steelChartJsData.value;
+  const canvas = steelChartCanvas.value;
+  const ctx = canvas.getContext("2d");
+
+  const existing = ChartJS.getChart(canvas);
+  if (existing) {
+    existing.destroy();
+  }
+
+  if (steelChartInstance.value) {
+    steelChartInstance.value.destroy();
+    steelChartInstance.value = null;
+  }
+
+  steelChartInstance.value = new ChartJS(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Steel (kg)",
+          data,
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { type: "category" },
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { display: false },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: "x",
+          },
+          pan: {
+            enabled: true,
+            mode: "x",
+          },
+        },
+      },
+    },
+  });
+};
+
+
+
 /* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI STATE ====== */
 onMounted(() => {
   const now = new Date();
@@ -549,12 +432,42 @@ onMounted(() => {
 
   loadDailyReport();
 });
-
+/* destroy chart khi rời khỏi trang DailyReportView */
+onUnmounted(() => {
+  if (powerChartInstance.value) {
+    powerChartInstance.value.destroy();
+    powerChartInstance.value = null;
+  }
+  if (steelChartInstance.value) {
+    steelChartInstance.value.destroy();
+    steelChartInstance.value = null;
+  }
+});
+/* reload API khi đổi state */
 watch(
   [selectedDate, timeHour, selectedReport, selectedBatchId, selectedShift],
   () => {
     loadDailyReport();
   }
+);
+
+/* update Chart.js khi data / report thay đổi */
+watch(
+  [powerTimeData, selectedReport],
+  async () => {
+    await nextTick();
+    upsertPowerChart();
+  },
+  { deep: true }
+);
+
+watch(
+  [steelLineData, selectedReport],
+  async () => {
+    await nextTick();
+    upsertSteelChart();
+  },
+  { deep: true }
 );
 </script>
 
@@ -703,7 +616,7 @@ watch(
           class="dr-chart-card"
           :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }"
         >
-          <!-- BATCH SUMMARY: LINE CHART + ZOOM -->
+          <!-- BATCH SUMMARY: LINE CHART (Chart.js) -->
           <template v-if="selectedReport === 'Batch Summary'">
             <div
               class="dr-chart-title"
@@ -712,79 +625,9 @@ watch(
               {{ t("power") }}
             </div>
 
-            <!-- Interval buttons (POWER) -->
-            <div class="interval-toggle">
-              <button
-                v-for="opt in intervalOptions"
-                :key="opt.value"
-                class="interval-btn"
-                :class="{ active: selectedPowerInterval === opt.value }"
-                @click="selectedPowerInterval = opt.value"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
-
-            <div class="line-chart-box power-line-box" @wheel="onPowerWheel">
-              <div
-                class="power-line-inner"
-                :style="{ width: powerSvgWidth + 'px' }"
-              >
-                <svg
-                  class="line-chart-svg"
-                  :viewBox="`0 -10 ${powerBaseWidth} ${lineChartHeight + 10}`"
-                >
-                  <!-- grid + Y ticks + label -->
-                  <g v-for="tick in powerLineTicks" :key="tick">
-                    <line
-                      :x1="0"
-                      :y1="powerValueToY(tick)"
-                      :x2="powerBaseWidth"
-                      :y2="powerValueToY(tick)"
-                      stroke="#e0e0e0"
-                      stroke-width="1"
-                    />
-                    <text
-                      :x="4"
-                      :y="powerValueToY(tick) - 2"
-                      font-size="10"
-                      text-anchor="start"
-                      fill="#666"
-                    >
-                      {{ tick }}
-                    </text>
-                  </g>
-
-                  <!-- đường line -->
-                  <polyline
-                    class="line-chart-path"
-                    :points="powerLinePointsStr"
-                  />
-
-                  <!-- điểm + label -->
-                  <g v-for="(p, idx) in powerLinePoints" :key="idx">
-                    <circle
-                      class="line-chart-point"
-                      :cx="p.x"
-                      :cy="p.y"
-                      r="3"
-                    />
-                    <text
-                      class="line-chart-point-label"
-                      :x="p.x"
-                      :y="p.y - 6"
-                    >
-                      {{ p.value.toFixed(2) }}
-                    </text>
-                  </g>
-                </svg>
-
-                <!-- time labels, scroll cùng chart -->
-                <div class="line-chart-time-row power-time-row">
-                  <span v-for="(time, idx) in powerTimeLabels" :key="idx">
-                    {{ time }}
-                  </span>
-                </div>
+            <div class="line-chart-box power-line-box">
+              <div class="chartjs-wrapper">
+                <canvas ref="powerChartCanvas"></canvas>
               </div>
             </div>
 
@@ -847,7 +690,7 @@ watch(
           class="dr-chart-card"
           :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }"
         >
-          <!-- BATCH SUMMARY: LINE CHART -->
+          <!-- BATCH SUMMARY: LINE CHART (Chart.js) -->
           <template v-if="selectedReport === 'Batch Summary'">
             <div
               class="dr-chart-titlee"
@@ -856,75 +699,9 @@ watch(
               {{ t("dailyReport.steelBallWithUnit") }}
             </div>
 
-            <!-- Interval buttons (STEEL) -->
-            <div class="interval-toggle">
-              <button
-                v-for="opt in intervalOptions"
-                :key="opt.value"
-                class="interval-btn"
-                :class="{ active: selectedSteelInterval === opt.value }"
-                @click="selectedSteelInterval = opt.value"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
-
-            <div class="line-chart-box" @wheel="onSteelWheel">
-              <div
-                class="power-line-inner"
-                :style="{ width: steelSvgWidth + 'px' }"
-              >
-                <svg
-                  class="line-chart-svg"
-                  :viewBox="`0 -10 ${steelBaseWidth} ${lineChartHeight + 10}`"
-                >
-                  <g v-for="tick in steelLineTicks" :key="tick">
-                    <line
-                      :x1="0"
-                      :y1="steelValueToY(tick)"
-                      :x2="steelBaseWidth"
-                      :y2="steelValueToY(tick)"
-                      stroke="#e0e0e0"
-                      stroke-width="1"
-                    />
-                    <text
-                      :x="4"
-                      :y="steelValueToY(tick) - 2"
-                      font-size="10"
-                      text-anchor="start"
-                      fill="#666"
-                    >
-                      {{ tick }}
-                    </text>
-                  </g>
-
-                  <polyline
-                    class="line-chart-path"
-                    :points="steelLinePointsStr"
-                  />
-
-                  <g v-for="(p, idx) in steelLinePoints" :key="idx">
-                    <circle
-                      class="line-chart-point"
-                      :cx="p.x"
-                      :cy="p.y"
-                      r="3"
-                    />
-                    <text
-                      class="line-chart-point-label"
-                      :x="p.x"
-                      :y="p.y - 6"
-                    >
-                      {{ p.value.toFixed(2) }}
-                    </text>
-                  </g>
-                </svg>
-
-                <div class="line-chart-time-row">
-                  <span v-for="(time, idx) in steelTimeLabels" :key="idx">
-                    {{ time }}
-                  </span>
-                </div>
+            <div class="line-chart-box">
+              <div class="chartjs-wrapper">
+                <canvas ref="steelChartCanvas"></canvas>
               </div>
             </div>
 
@@ -1029,6 +806,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 16px;
+  margin-top: -6px;
 }
 
 /* TOP BAR */
@@ -1036,12 +814,11 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-top: -15px;
 }
 
 .dr-top-left {
   display: flex;
-  width: 30%;
+  width: 40%;
   height: 100%;
   align-items: center;
 }
@@ -1053,7 +830,8 @@ watch(
 }
 
 .dr-batch {
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .dr-top-right {
@@ -1073,7 +851,7 @@ watch(
   display: flex;
   align-items: center;
   padding: 0px 5px 0px 5px;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
 }
 
@@ -1111,7 +889,6 @@ watch(
   line-height: 40px;
   padding: 0 24px 0 10px;
 
-  font-size: 22px;
   font-weight: 600;
 
   background-image: linear-gradient(45deg, transparent 50%, #000 50%),
@@ -1130,7 +907,7 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -1191,11 +968,12 @@ watch(
 
 /* SUMMARY */
 .dr-summary {
-  display: grid;
+    display: grid;
   grid-template-columns: 2fr 1.3fr 1.3fr;
   background: rgb(214, 220, 229);
-  border-radius: 10px;
-  padding: 0px 10px;
+  border-radius: 12px;
+  padding: 5px 10px;
+  margin-top: 4px;
 }
 
 .dr-summary-card {
@@ -1264,7 +1042,8 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 13px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* CARD */
@@ -1422,29 +1201,6 @@ watch(
   width: 40%;
 }
 
-/* Interval toggle */
-.interval-toggle {
-  position: absolute;
-  top: 10px;
-  right: 16px;
-  display: flex;
-  gap: 6px;
-}
-
-.interval-btn {
-  border: 1px solid #ccc;
-  background: #fff;
-  padding: 2px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.interval-btn.active {
-  background: #173656;
-  color: #fff;
-  border-color: #173656;
-}
-
 /* Alarm History */
 .dr-alarm-row {
   display: flex;
@@ -1538,14 +1294,14 @@ watch(
 
 .center {
   text-align: center;
-  padding: 12px 10px 12px 10px;
+  padding: 20px 10px;
 }
 .time {
   text-align: center;
-  padding: 12px 10px 12px 10px;
+  padding: 20px 10px;
 }
 
-/* ====== LINE CHART ====== */
+/* ====== LINE CHART BOX dùng cho Chart.js ====== */
 .line-chart-box {
   flex: 1;
   height: 174px;
@@ -1559,82 +1315,14 @@ watch(
   overflow-y: hidden;
 }
 
-/* power line: chứa svg + time row */
-.power-line-box {
-}
-
-.power-line-inner {
-  display: flex;
-  flex-direction: column;
-}
-
-/* svg chiếm full width của inner */
-.line-chart-svg {
+.chartjs-wrapper {
   width: 100%;
   height: 100%;
 }
 
-.line-chart-path {
-  fill: none;
-  stroke: #0074d9;
-  stroke-width: 2;
-}
-
-.line-chart-point {
-  fill: #0074d9;
-}
-
-.line-chart-point-label {
-  font-size: 10px;
-  text-anchor: middle;
-}
-
-/* TIME row dưới khung chart */
-.line-chart-time-row {
-  display: flex;
-  justify-content: flex-start;
-  padding: 0 8px;
-  margin-top: 4px;
-  font-size: 10px;
-}
-
-.line-chart-time-row span {
-  flex: 0 0 60px; /* khớp với POINT_SPACING */
-  text-align: center;
-}
-
-/* power time row có thể dài hơn, theo width inner */
-.power-time-row {
-  padding-top: 4px;
-}
-
-/* TIME EDIT MODE (VERSION 2) */
-.time-editing {
-  gap: 6px;
-}
-
-.time-input {
-  width: 50px;
-  text-align: center;
-  font-size: 24px;
-  font-weight: 600;
-  padding: 2px 4px;
-  border: 1px solid #999;
-  border-radius: 4px;
-}
-
-.time-btn {
-  margin-left: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid #2f4f7e;
-  background: #e7e6e6;
-  cursor: pointer;
-}
-
-.time-btn.cancel {
-  background: #f8d7da;
+.chartjs-wrapper canvas {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* ALIGN CHART KHI LÀ BATCH SUMMARY (LINE) */

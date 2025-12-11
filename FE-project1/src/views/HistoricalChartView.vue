@@ -6,6 +6,9 @@ import { useI18n } from "@/languages/i18n";
 // ==== i18n ====
 const { t } = useI18n();
 
+/* ==== STEEL BEGIN (MẶC ĐỊNH) ==== */
+const STEEL_BEGIN = 5000; // KG
+
 /* ==== Report type & date range ==== */
 // "daily" | "monthly" | "yearly"
 const reportTypes = ["daily", "monthly", "yearly"];
@@ -73,12 +76,9 @@ const openToPicker = () => {
   }
 };
 
-/* ==== SUMMARY DATA (từ BE) ==== */
-const steelBallTotal = ref(0);
-const powerTotal = ref(0);
-
-// BE trả totalTimeHours (float), mình đổi sang phút rồi tách giờ/phút
-const totalMinutes = ref(0);
+/* ==== SUMMARY DATA (từ BE – CHỈ DÙNG POWER + TIME) ==== */
+const powerTotal = ref(0);     // tổng power
+const totalMinutes = ref(0);   // tổng phút chạy (từ BE)
 const timeHour = computed(() => Math.floor(totalMinutes.value / 60));
 const timeMinute = computed(() => totalMinutes.value % 60);
 
@@ -94,7 +94,7 @@ const intervalOptions = [
 ];
 
 const selectedCurrentInterval = ref(60); // 1h
-const selectedWeightInterval = ref(60);  // 1h
+const selectedWeightInterval = ref(60); // 1h
 
 // helper gom bucket theo intervalMinutes, từ raw {x/time, y/value}
 const bucketizeByInterval = (raw, intervalMinutes) => {
@@ -107,9 +107,7 @@ const bucketizeByInterval = (raw, intervalMinutes) => {
     if (!timeStr) return;
 
     // chuẩn hóa "YYYY-MM-DD HH:mm" -> ISO
-    const isoStr = timeStr.includes("T")
-      ? timeStr
-      : timeStr.replace(" ", "T");
+    const isoStr = timeStr.includes("T") ? timeStr : timeStr.replace(" ", "T");
 
     const dt = new Date(isoStr);
     if (Number.isNaN(dt.getTime())) return;
@@ -165,6 +163,46 @@ const weightData = computed(() => {
   });
 });
 
+/* ==== TỔNG STEEL / POWER (effective) ==== */
+// Steel: HOÀN TOÀN DÙNG TỪ rawSeriesSteelBall
+const steelTotalEffective = computed(() => {
+  if (!rawSeriesSteelBall.value.length) return 0;
+  return rawSeriesSteelBall.value.reduce(
+    (sum, p) => sum + (Number(p.value ?? p.y ?? 0) || 0),
+    0
+  );
+});
+
+// Power: ưu tiên BE, nếu 0 thì tính sum từ current
+const powerTotalEffective = computed(() => {
+  const fromSummary = Number(powerTotal.value);
+  if (Number.isFinite(fromSummary) && fromSummary > 0) return fromSummary;
+
+  const sum = rawSeriesCurrent.value.reduce(
+    (acc, p) => acc + (Number(p.value ?? p.y ?? 0) || 0),
+    0
+  );
+  return sum;
+});
+
+/* ==== DISPLAY SUMMARY (BEGIN/FROM/AFTER) ==== */
+const steelBeforeDisplay = computed(() => {
+  return STEEL_BEGIN.toFixed(2);
+});
+
+const steelAfterDisplay = computed(() => {
+  const used = steelTotalEffective.value;
+  const after = STEEL_BEGIN - used;
+  return (after > 0 ? after : 0).toFixed(2);
+});
+
+const steelTotalDisplay = computed(() =>
+  steelTotalEffective.value.toFixed(2)
+);
+
+const powerTotalDisplay = computed(() =>
+  powerTotalEffective.value.toFixed(2)
+);
 
 /* ==== Chart config (SVG) ==== */
 const svgWidth = 400;
@@ -187,10 +225,7 @@ const lineInnerWidth = innerWidth - lineLeftPadding - lineRightPadding;
 const maxYCurrent = computed(() => {
   const maxData = Math.max(0, ...currentData.value.map((d) => d.y));
   // base: 35 cho 1h, 70 cho 2h
-  let base =
-    selectedCurrentInterval.value === 60
-      ? 35
-      : 70;
+  let base = selectedCurrentInterval.value === 60 ? 35 : 70;
   const v = Math.max(base, maxData);
   // bậc bước 5 hoặc 10 cho đẹp
   const step = selectedCurrentInterval.value === 60 ? 5 : 10;
@@ -199,10 +234,7 @@ const maxYCurrent = computed(() => {
 
 const maxYWeight = computed(() => {
   const maxData = Math.max(0, ...weightData.value.map((d) => d.y));
-  let base =
-    selectedWeightInterval.value === 60
-      ? 35
-      : 70;
+  let base = selectedWeightInterval.value === 60 ? 35 : 70;
   const step = selectedWeightInterval.value === 60 ? 5 : 10;
   const v = Math.max(base, maxData);
   return Math.ceil(v / step) * step;
@@ -246,7 +278,7 @@ const onCurrentWheel = (e) => {
 
 /* Steel Ball */
 const weightZoom = ref(1);
-const weightSvgWidth  = computed(() => svgWidth * weightZoom.value);
+const weightSvgWidth = computed(() => svgWidth * weightZoom.value);
 const onWeightWheel = (e) => {
   if (!weightData.value.length) return;
   e.preventDefault();
@@ -422,15 +454,17 @@ const fetchHistorical = async () => {
 
     const data = await res.json();
 
-    // summary
+    // summary (CHỈ DÙNG POWER + TIME)
     const sum = data.summary || {};
-    powerTotal.value = Number(sum.totalPowerKw || 0);
-    steelBallTotal.value = Number(sum.totalSteelBallKg || 0);
+
+    powerTotal.value = Number(
+      sum.totalPowerKw ?? sum.totalPower ?? 0
+    );
 
     const totalHours = Number(sum.totalTimeHours || 0);
     totalMinutes.value = Math.round(totalHours * 60);
 
-    // series (raw)
+    // series (raw) – STEEL dùng để tính TOTAL + AFTER
     rawSeriesCurrent.value = data.seriesCurrent || [];
     rawSeriesSteelBall.value = data.seriesSteelBall || [];
 
@@ -584,48 +618,59 @@ onMounted(() => {
     </header>
 
     <!-- SUMMARY ROW -->
-    <section class="summary-row">
-      <div class="summary-card">
-        <div class="summary-header">{{ t("dailyReport.steelBall") }}</div>
-        <div class="summary-body steel-summary">
-          <div class="before-after">
+    <section class="dr-summary">
+      <!-- Steel Ball -->
+      <div class="dr-summary-card">
+        <div class="dr-summary-title">{{ t("dailyReport.steelBall") }}</div>
+
+        <div class="dr-summary-content steel">
+          <div class="dr-before-after">
             <div>
               {{ t("dailyReport.before") }} :<br />
-              <strong>1123.45(KG)</strong>
+              <strong style="padding-left: 20px; font-weight: 500">
+                {{ steelBeforeDisplay }} (KG)
+              </strong>
             </div>
+
             <div>
               {{ t("dailyReport.after") }} :<br />
-              <strong>1000(KG)</strong>
+              <strong style="padding-left: 20px; font-weight: 500">
+                {{ steelAfterDisplay }} (KG)
+              </strong>
             </div>
           </div>
-          <div class="summary-main">
-            <span class="summary-value">{{ steelBallTotal.toFixed(2) }}</span>
-            <span class="summary-unit">KG</span>
+
+          <div class="dr-main-value">
+            <span class="big">{{ steelTotalDisplay }}</span>
+            <span class="unit">KG</span>
           </div>
         </div>
       </div>
 
-      <div class="summary-card">
-        <div class="summary-header">{{ t("power") }}</div>
-        <div class="summary-body">
-          <div class="summary-main center-main">
-            <span class="summary-value">{{ powerTotal.toFixed(2) }}</span>
-            <span class="summary-unit">kW</span>
-          </div>
+      <!-- Power -->
+      <div class="dr-summary-card">
+        <div class="dr-summary-title">{{ t("power") }}</div>
+
+        <div class="dr-summary-content center">
+          <span class="big">{{ powerTotalDisplay }}</span>
+          <span class="unitt">kW</span>
         </div>
       </div>
 
-      <div class="summary-card">
-        <div class="summary-header">{{ t("dailyReport.time") }}</div>
-        <div class="summary-body">
-          <div class="summary-main center-main">
-            <span class="summary-value">{{ timeHour }}</span>
-            <span class="summary-unit">h</span>
-            <span class="summary-value small">
-              {{ timeMinute.toString().padStart(2, "0") }}
-            </span>
-            <span class="summary-unit">m</span>
-          </div>
+      <!-- Time -->
+      <div class="dr-summary-card">
+        <div class="dr-summary-title">{{ t("dailyReport.time") }}</div>
+
+        <div class="dr-summary-content time">
+          <span class="big">
+            {{ timeHour }}
+          </span>
+          <span class="unitt">h</span>
+
+          <span class="big">
+            {{ timeMinute.toString().padStart(2, "0") }}
+          </span>
+          <span class="unitt">m</span>
         </div>
       </div>
     </section>
@@ -818,8 +863,7 @@ onMounted(() => {
 <style scoped>
 .historical-page {
   box-sizing: border-box;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  /* ❌ BỎ font-family để dùng chung font với DailyReportView */
 }
 
 /* TOP BAR */
@@ -827,6 +871,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: -6px;
+  margin-bottom: 18px;
 }
 
 .top-filters {
@@ -844,7 +890,7 @@ onMounted(() => {
 
 .filter-label {
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .select-box {
@@ -867,10 +913,74 @@ onMounted(() => {
   background-position: calc(100% - 16px) 50%, calc(100% - 10px) 50%;
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
 }
 
+/* SUMMARY ROW (y chang style bên Daily) */
+.dr-summary {
+  display: grid;
+  grid-template-columns: 2fr 1.3fr 1.3fr;
+  background: rgb(214, 220, 229);
+  border-radius: 12px;
+  padding: 5px 10px;
+  margin-top: 4px;
+}
+
+.dr-summary-card {
+  border-radius: 12px;
+  padding: 0px 5px 10px 5px;
+}
+
+.dr-summary-title {
+  text-align: center;
+  font-weight: 600;
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+
+.dr-summary-content {
+  background: #fff;
+  padding: 5px 10px 5px 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.center{
+  padding: 20px 0px;
+}
+.time{
+  padding: 20px 0px;
+}
+.dr-summary-content.steel {
+  justify-content: space-between;
+}
+
+.dr-before-after {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.big {
+  font-size: 45px;
+  font-weight: 600;
+}
+
+.unit {
+  font-size: 25px;
+  font-weight: 500;
+  padding-left: 10px;
+}
+.unitt{
+  font-size: 25px;
+  font-weight: 500;
+  padding-left: 10px;
+  padding-top: 15px;
+}
 /* Date display */
 .date-wrapper {
   position: relative;
@@ -879,7 +989,7 @@ onMounted(() => {
 .date-display {
   border: 1px solid #000;
   background: #fff;
-  padding: 4px 10px;
+  padding: 7.5px 10px;
   min-width: 130px;
   display: flex;
   align-items: center;
@@ -951,75 +1061,7 @@ onMounted(() => {
 
 .btn-csv {
   padding: 10px 20px;
-  background: #e7e6e6;
-}
-
-/* SUMMARY ROW */
-.summary-row {
-  margin-top: 16px;
-  display: grid;
-  grid-template-columns: 2fr 1.4fr 1.4fr;
-  background: #d5dde8;
-  border-radius: 10px;
-  padding: 0px 10px 0px 10px;
-}
-
-.summary-card {
-  border-radius: 10px;
-  padding: 3px 4px 10px;
-}
-
-.summary-header {
-  text-align: center;
-  font-weight: 600;
-  font-size: 22px;
-  margin-bottom: 4px;
-}
-
-.summary-body {
-  background: #fff;
-  padding: 2px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.steel-summary {
-  justify-content: space-between;
-}
-
-.before-after {
-  font-size: 13px;
-}
-
-.before-after strong {
-  font-size: 15px;
-  padding-left: 10px;
-}
-
-.summary-main {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.center-main {
-  margin: 0 auto;
-  padding: 9.5px 0px;
-}
-
-.summary-value {
-  font-size: 42px;
-  font-weight: 600;
-}
-
-.summary-value.small {
-  font-size: 28px;
-}
-
-.summary-unit {
-  font-size: 18px;
-  font-weight: 500;
+  background: rgb(214, 220, 229);
 }
 
 /* CHARTS ROW */
@@ -1028,10 +1070,10 @@ onMounted(() => {
   display: grid;
   /* Cho phép content overflow mà không đẩy bể layout */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  background: #d5dde8;
+  background: rgb(214, 220, 229);
   gap: 10px;
-  padding: 0px 18px;
-  border-radius: 10px;
+  padding: 5px 18px 0px 18px;
+  border-radius: 12px;
 }
 
 .chart-card {
@@ -1118,8 +1160,8 @@ onMounted(() => {
 
 /* POWER ROW */
 .power-row {
-  background: #d5dde8;
-  border-radius: 10px;
+  background: rgb(214, 220, 229);
+  border-radius: 12px;
 }
 
 .power-row-title {
@@ -1173,6 +1215,7 @@ onMounted(() => {
   border-radius: 4px;
   cursor: pointer;
 }
+
 .interval-btn.active {
   background: #173656;
   color: #fff;

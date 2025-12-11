@@ -1,19 +1,19 @@
 <script setup>
-import { RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterView, useRoute, useRouter } from "vue-router";
 
-const route = useRoute()
-const router = useRouter()
+const route = useRoute();
+const router = useRouter();
 
 const menuItems = [
-  { label: 'Dashboard',        path: '/' },
-  { label: 'Daily Report',     path: '/daily-report' },
-  { label: 'Historical Chart', path: '/historical-chart' },
-  { label: 'Settings',         path: '/settings' },
-]
+  { label: "Dashboard", path: "/" },
+  { label: "Daily Report", path: "/daily-report" },
+  { label: "Historical Chart", path: "/historical-chart" },
+  { label: "Settings", path: "/settings" },
+];
 
 const goTo = (path) => {
-  router.push(path)
-}
+  router.push(path);
+};
 </script>
 
 <template>
@@ -46,16 +46,24 @@ const goTo = (path) => {
 </template>
 
 <style>
-* {
-  font-family: "Noto Sans TC", "Noto Sans", system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-html, body, #app {
+/* ====== FONT TOÀN APP (EN / JP / ZH) ====== */
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap");
+
+/* body & #app dùng chung 1 font */
+html,
+body,
+#app {
   height: 100%;
   margin: 0;
   padding: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font-family: "Noto Sans TC", "Noto Sans JP", system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Tất cả element con kế thừa font từ trên xuống */
+* {
+  box-sizing: border-box;
+  font-family: inherit;
 }
 
 /* ========== CĂN GIỮA TOÀN TRANG ========== */

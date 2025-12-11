@@ -426,7 +426,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-top: -2px;
 }
 
 .dashboard-content {
@@ -447,6 +447,7 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  margin: 11px 0px;
 }
 
 .alert-button {
@@ -488,7 +489,7 @@ onMounted(() => {
 
 .panel {
   background: rgb(214, 220, 229);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 5px 25px 14px 25px;
 }
 

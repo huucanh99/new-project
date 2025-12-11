@@ -416,6 +416,7 @@ onBeforeUnmount(() => {
   background: rgb(157, 195, 230);
   cursor: pointer;
   font-weight: 600;
+  font-size: 16px;
 }
 
 .clws-header-spacer {

@@ -30,7 +30,7 @@ const currentPage = ref("general");
 <style scoped>
 .sp-time {
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 600 !important;
   margin-bottom: 12px;
 }
 </style>
