@@ -41,8 +41,8 @@ const isChinese = computed(() => i18n.currentLang.value.startsWith("zh"));
 /* ====== Report & Date & Shift & Batch ID ====== */
 const reportOptions = [
   { value: "Daily Total Report", labelKey: "dailyReport.dailyTotal" },
-  { value: "Shift Report",       labelKey: "dailyReport.shiftReport" },
-  { value: "Batch Summary",      labelKey: "dailyReport.batchSummary" },
+  { value: "Shift Report", labelKey: "dailyReport.shiftReport" },
+  { value: "Batch Summary", labelKey: "dailyReport.batchSummary" },
 ];
 
 const selectedReport = ref(reportOptions[0].value);
@@ -79,9 +79,9 @@ const openDatePicker = () => {
 
 // ====== Shift (chỉ dùng cho Shift Report) ======
 const shiftOptions = [
-  { value: 2, labelKey: "dailyReport.dayShift" },        // Day Shift
-  { value: 3, labelKey: "dailyReport.afternoonShift" },  // Afternoon Shift
-  { value: 1, labelKey: "dailyReport.nightShift" },      // Night Shift
+  { value: 2, labelKey: "dailyReport.dayShift" }, // Day Shift
+  { value: 3, labelKey: "dailyReport.afternoonShift" }, // Afternoon Shift
+  { value: 1, labelKey: "dailyReport.nightShift" }, // Night Shift
 ];
 const selectedShift = ref(shiftOptions[0].value); // default: Day Shift (2)
 
@@ -89,9 +89,11 @@ const selectedShift = ref(shiftOptions[0].value); // default: Day Shift (2)
 const batchIdOptions = ref([]);
 const selectedBatchId = ref("");
 
-/* ====== Alarm table ====== */
+/* ====== Alarm table (GET từ /api/alarms) ====== */
 const alarmRows = ref([]);
 const showAlarmModal = ref(false);
+const alarmLoading = ref(false);
+const alarmError = ref("");
 
 /* ====== TIME card (drag) ====== */
 const timeHour = ref(12);
@@ -134,9 +136,9 @@ const onTimeMouseUp = () => {
 };
 
 /* ====== STATE NHẬN TỪ BACKEND ====== */
-const powerTimeData = ref([]);   // raw power theo time (Batch Summary) {time, value}
-const steelLineData = ref([]);   // raw steel theo time (Batch Summary) {time, value}
-const powerBatches = ref([]);    // theo batch (Daily/Shift)
+const powerTimeData = ref([]); // raw power theo time (Batch Summary) {time, value}
+const steelLineData = ref([]); // raw steel theo time (Batch Summary) {time, value}
+const powerBatches = ref([]); // theo batch (Daily/Shift)
 const steelBatches = ref([]);
 const summary = ref({
   totalPower: 0,
@@ -151,6 +153,9 @@ const error = ref("");
 
 const API_BASE = "http://26.51.197.241:4000";
 // const API_BASE = "http://localhost:4000";
+
+/* ====== ✅ Steel Ball "Before" lấy từ BE ====== */
+const steelBaseBefore = ref(5000); // fallback nếu BE chưa trả
 
 /* ====== helper format số (làm tròn FE) ====== */
 const format2 = (value) => {
@@ -182,7 +187,6 @@ const loadDailyReport = async () => {
     }
 
     const res = await fetch(`${API_BASE}/api/daily-report?${params.toString()}`);
-
     if (!res.ok) {
       throw new Error(`Failed to load daily report (status ${res.status})`);
     }
@@ -198,7 +202,6 @@ const loadDailyReport = async () => {
     powerBatches.value = data.powerBatches || [];
     steelBatches.value = data.steelBatches || [];
 
-    alarmRows.value = data.alarmRows || [];
     summary.value = data.summary || summary.value;
 
     const newBatchIds = data.batchIds || [];
@@ -213,12 +216,38 @@ const loadDailyReport = async () => {
 
     const last = (data.powerBatches || []).slice(-1)[0];
     batchInProgress.value = last ? last.batch : "";
+
+    // ✅ BEFORE lấy từ BE (đúng theo ý Tiên)
+    if (data.steelBallBeforeKg != null) {
+      steelBaseBefore.value = Number(data.steelBallBeforeKg) || steelBaseBefore.value;
+    }
   } catch (err) {
     console.error(err);
     error.value = err.message || "Error loading daily report";
   } finally {
     loading.value = false;
   }
+};
+
+/* ====== FETCH ALARMS from /api/alarms ====== */
+const fetchAlarms = async () => {
+  alarmLoading.value = true;
+  alarmError.value = "";
+  try {
+    const res = await fetch(`${API_BASE}/api/alarms`);
+    if (!res.ok) throw new Error(`Failed to load alarms (status ${res.status})`);
+    alarmRows.value = await res.json();
+  } catch (e) {
+    console.error(e);
+    alarmError.value = e.message || "Error loading alarms";
+  } finally {
+    alarmLoading.value = false;
+  }
+};
+
+const openAlarmModal = async () => {
+  await fetchAlarms();
+  showAlarmModal.value = true;
 };
 
 /* ====== DATA CHO BAR CHART (Daily / Shift) ====== */
@@ -238,10 +267,7 @@ const steelTotal = computed(() => {
       0
     );
   }
-  return steelBatches.value.reduce(
-    (sum, item) => sum + (Number(item.value || 0)),
-    0
-  );
+  return steelBatches.value.reduce((sum, item) => sum + (Number(item.value || 0)), 0);
 });
 
 const powerTotal = computed(() => {
@@ -251,14 +277,10 @@ const powerTotal = computed(() => {
       0
     );
   }
-  return powerBatches.value.reduce(
-    (sum, item) => sum + (Number(item.value || 0)),
-    0
-  );
+  return powerBatches.value.reduce((sum, item) => sum + (Number(item.value || 0)), 0);
 });
 
-const steelBaseBefore = ref(5000);
-
+/* ✅ BEFORE/AFTER theo sensor BEFORE - steelUsed */
 const steelBeforeDisplay = computed(() => steelBaseBefore.value.toFixed(2));
 
 const steelAfterDisplay = computed(() => {
@@ -270,27 +292,20 @@ const steelTotalDisplay = computed(() => steelTotal.value.toFixed(2));
 const powerTotalDisplay = computed(() => powerTotal.value.toFixed(2));
 
 /* ====== DATA CHO CHART.JS (Batch Summary) – dùng raw data ====== */
-
 const powerChartJsData = computed(() => {
   const labels = powerTimeData.value.map((p) => p.time || "");
-  const data = powerTimeData.value.map(
-    (p) => Number(p.value ?? p.power_kw ?? 0) || 0
-  );
+  const data = powerTimeData.value.map((p) => Number(p.value ?? p.power_kw ?? 0) || 0);
   return { labels, data };
 });
 
 const steelChartJsData = computed(() => {
   const labels = steelLineData.value.map((p) => p.time || "");
-  const data = steelLineData.value.map(
-    (p) => Number(p.value ?? p.steel_kg ?? 0) || 0
-  );
+  const data = steelLineData.value.map((p) => Number(p.value ?? p.steel_kg ?? 0) || 0);
   return { labels, data };
 });
 
 /* ====== HÀM TẠO / UPDATE Chart.js ====== */
-
 const upsertPowerChart = () => {
-  // Nếu không phải Batch Summary thì phá chart (nếu có) rồi thoát
   if (selectedReport.value !== "Batch Summary") {
     if (powerChartInstance.value) {
       powerChartInstance.value.destroy();
@@ -305,13 +320,9 @@ const upsertPowerChart = () => {
   const canvas = powerChartCanvas.value;
   const ctx = canvas.getContext("2d");
 
-  // ✅ Nếu Chart.js đang có chart gắn với canvas này thì destroy luôn
   const existing = ChartJS.getChart(canvas);
-  if (existing) {
-    existing.destroy();
-  }
+  if (existing) existing.destroy();
 
-  // ✅ Nếu mình lưu ref instance thì cũng destroy nốt cho chắc
   if (powerChartInstance.value) {
     powerChartInstance.value.destroy();
     powerChartInstance.value = null;
@@ -321,42 +332,22 @@ const upsertPowerChart = () => {
     type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: "Power (kW)",
-          data,
-          borderWidth: 1.5,
-          pointRadius: 2,
-          tension: 0.2,
-        },
-      ],
+      datasets: [{ label: "Power (kW)", data, borderWidth: 1.5, pointRadius: 2, tension: 0.2 }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      scales: {
-        x: { type: "category" },
-        y: { beginAtZero: true },
-      },
+      scales: { x: { type: "category" }, y: { beginAtZero: true } },
       plugins: {
         legend: { display: false },
         zoom: {
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            mode: "x",
-          },
-          pan: {
-            enabled: true,
-            mode: "x",
-          },
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
+          pan: { enabled: true, mode: "x" },
         },
       },
     },
   });
 };
-
-
 
 const upsertSteelChart = () => {
   if (selectedReport.value !== "Batch Summary") {
@@ -374,9 +365,7 @@ const upsertSteelChart = () => {
   const ctx = canvas.getContext("2d");
 
   const existing = ChartJS.getChart(canvas);
-  if (existing) {
-    existing.destroy();
-  }
+  if (existing) existing.destroy();
 
   if (steelChartInstance.value) {
     steelChartInstance.value.destroy();
@@ -387,52 +376,31 @@ const upsertSteelChart = () => {
     type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: "Steel (kg)",
-          data,
-          borderWidth: 1.5,
-          pointRadius: 2,
-          tension: 0.2,
-        },
-      ],
+      datasets: [{ label: "Steel (kg)", data, borderWidth: 1.5, pointRadius: 2, tension: 0.2 }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      scales: {
-        x: { type: "category" },
-        y: { beginAtZero: true },
-      },
+      scales: { x: { type: "category" }, y: { beginAtZero: true } },
       plugins: {
         legend: { display: false },
         zoom: {
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            mode: "x",
-          },
-          pan: {
-            enabled: true,
-            mode: "x",
-          },
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
+          pan: { enabled: true, mode: "x" },
         },
       },
     },
   });
 };
 
-
-
 /* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI STATE ====== */
 onMounted(() => {
   const now = new Date();
   timeHour.value = now.getHours();
   timeMinute.value = now.getMinutes();
-
   loadDailyReport();
 });
-/* destroy chart khi rời khỏi trang DailyReportView */
+
 onUnmounted(() => {
   if (powerChartInstance.value) {
     powerChartInstance.value.destroy();
@@ -443,15 +411,11 @@ onUnmounted(() => {
     steelChartInstance.value = null;
   }
 });
-/* reload API khi đổi state */
-watch(
-  [selectedDate, timeHour, selectedReport, selectedBatchId, selectedShift],
-  () => {
-    loadDailyReport();
-  }
-);
 
-/* update Chart.js khi data / report thay đổi */
+watch([selectedDate, timeHour, selectedReport, selectedBatchId, selectedShift], () => {
+  loadDailyReport();
+});
+
 watch(
   [powerTimeData, selectedReport],
   async () => {
@@ -471,16 +435,14 @@ watch(
 );
 </script>
 
+
 <template>
   <TimeClock class="sp-time" size="normal" align="left" />
   <div class="daily-report">
     <!-- TOP BAR -->
     <header class="dr-topbar">
       <div class="dr-top-left">
-        <div
-          class="dr-batch"
-          v-if="selectedReport !== 'Batch Summary'"
-        >
+        <div class="dr-batch" v-if="selectedReport !== 'Batch Summary'">
           {{ t("batchInProgress") }} :
           <span>{{ batchInProgress || "-" }}</span>
         </div>
@@ -490,11 +452,7 @@ watch(
         <!-- Report select -->
         <div class="dr-select-group">
           <select v-model="selectedReport" class="dr-select-box dr-select">
-            <option
-              v-for="opt in reportOptions"
-              :key="opt.value"
-              :value="opt.value"
-            >
+            <option v-for="opt in reportOptions" :key="opt.value" :value="opt.value">
               {{ t(opt.labelKey) }}
             </option>
           </select>
@@ -509,12 +467,7 @@ watch(
             <span class="date-icon">▾</span>
           </div>
 
-          <input
-            ref="dateInput"
-            type="date"
-            v-model="selectedDate"
-            class="hidden-date-input"
-          />
+          <input ref="dateInput" type="date" v-model="selectedDate" class="hidden-date-input" />
 
           <!-- SHIFT -->
           <select
@@ -522,11 +475,7 @@ watch(
             v-model="selectedShift"
             class="dr-select-box dr-shift-select"
           >
-            <option
-              v-for="opt in shiftOptions"
-              :key="opt.value"
-              :value="opt.value"
-            >
+            <option v-for="opt in shiftOptions" :key="opt.value" :value="opt.value">
               {{ t(opt.labelKey) }}
             </option>
           </select>
@@ -534,10 +483,7 @@ watch(
           <!-- BATCH ID -->
           <template v-if="selectedReport === 'Batch Summary'">
             <div class="dr-label dr-label-inline">{{ t("batchId") }}</div>
-            <select
-              v-model="selectedBatchId"
-              class="dr-select-box dr-batchid-select"
-            >
+            <select v-model="selectedBatchId" class="dr-select-box dr-batchid-select">
               <option v-for="opt in batchIdOptions" :key="opt" :value="opt">
                 {{ opt }}
               </option>
@@ -586,19 +532,10 @@ watch(
       <!-- Time -->
       <div class="dr-summary-card">
         <div class="dr-summary-title">{{ t("dailyReport.time") }}</div>
-
         <div class="dr-summary-content time">
-          <span
-            class="big"
-            @mousedown="(e) => onTimeMouseDown('hour', e)"
-          >
-            {{ timeHour }}
-          </span>
+          <span class="big" @mousedown="(e) => onTimeMouseDown('hour', e)">{{ timeHour }}</span>
           <span class="unitt">h</span>
-          <span
-            class="big"
-            @mousedown="(e) => onTimeMouseDown('minute', e)"
-          >
+          <span class="big" @mousedown="(e) => onTimeMouseDown('minute', e)">
             {{ timeMinute.toString().padStart(2, "0") }}
           </span>
           <span class="unitt">m</span>
@@ -612,16 +549,9 @@ watch(
 
       <div class="dr-batch-content">
         <!-- LEFT CHART: POWER -->
-        <div
-          class="dr-chart-card"
-          :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }"
-        >
-          <!-- BATCH SUMMARY: LINE CHART (Chart.js) -->
+        <div class="dr-chart-card" :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }">
           <template v-if="selectedReport === 'Batch Summary'">
-            <div
-              class="dr-chart-title"
-              :class="{ 'dr-chart-title--zh': isChinese }"
-            >
+            <div class="dr-chart-title" :class="{ 'dr-chart-title--zh': isChinese }">
               {{ t("power") }}
             </div>
 
@@ -631,71 +561,39 @@ watch(
               </div>
             </div>
 
-            <div class="dr-x-axis-label">
-              {{ t("timeAxis") }}
-            </div>
+            <div class="dr-x-axis-label">{{ t("timeAxis") }}</div>
           </template>
 
-          <!-- CÁC REPORT KHÁC: BAR CHART CŨ -->
           <template v-else>
-            <div
-              class="dr-chart-title"
-              :class="{ 'dr-chart-title--zh': isChinese }"
-            >
+            <div class="dr-chart-title" :class="{ 'dr-chart-title--zh': isChinese }">
               {{ t("power") }}
             </div>
             <div class="dr-chart">
               <div class="dr-y-axis">
-                <span>35</span>
-                <span>30</span>
-                <span>25</span>
-                <span>20</span>
-                <span>15</span>
-                <span>10</span>
-                <span>5</span>
-                <span>0</span>
+                <span>35</span><span>30</span><span>25</span><span>20</span>
+                <span>15</span><span>10</span><span>5</span><span>0</span>
               </div>
 
               <div class="dr-chart-scroll">
                 <div class="dr-chart-bars">
-                  <div
-                    v-for="item in powerChartData"
-                    :key="item.batch"
-                    class="dr-bar-wrapper"
-                  >
-                    <div
-                      class="dr-bar"
-                      :style="{ height: barHeight(item.value) }"
-                    >
-                      <!-- LÀM TRÒN 2 SỐ THẬP PHÂN Ở FE -->
+                  <div v-for="item in powerChartData" :key="item.batch" class="dr-bar-wrapper">
+                    <div class="dr-bar" :style="{ height: barHeight(item.value) }">
                       <span class="dr-bar-value">{{ format2(item.value) }}</span>
                     </div>
-
-                    <div class="dr-bar-label">
-                      {{ item.batch }}
-                    </div>
+                    <div class="dr-bar-label">{{ item.batch }}</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div class="dr-x-axis-label">
-              {{ t("batchAxis") }}
-            </div>
+            <div class="dr-x-axis-label">{{ t("batchAxis") }}</div>
           </template>
         </div>
 
         <!-- RIGHT CHART: STEEL BALL -->
-        <div
-          class="dr-chart-card"
-          :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }"
-        >
-          <!-- BATCH SUMMARY: LINE CHART (Chart.js) -->
+        <div class="dr-chart-card" :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }">
           <template v-if="selectedReport === 'Batch Summary'">
-            <div
-              class="dr-chart-titlee"
-              :class="{ 'dr-chart-titlee--zh': isChinese }"
-            >
+            <div class="dr-chart-titlee" :class="{ 'dr-chart-titlee--zh': isChinese }">
               {{ t("dailyReport.steelBallWithUnit") }}
             </div>
 
@@ -708,35 +606,20 @@ watch(
             <div class="dr-x-axis-label">{{ t("timeAxis") }}</div>
           </template>
 
-          <!-- CÁC REPORT KHÁC: BAR CHART -->
           <template v-else>
-            <div
-              class="dr-chart-titlee"
-              :class="{ 'dr-chart-titlee--zh': isChinese }"
-            >
+            <div class="dr-chart-titlee" :class="{ 'dr-chart-titlee--zh': isChinese }">
               {{ t("dailyReport.steelBallWithUnit") }}
             </div>
             <div class="dr-chart">
               <div class="dr-y-axis">
-                <span>35</span>
-                <span>30</span>
-                <span>25</span>
-                <span>20</span>
-                <span>15</span>
-                <span>10</span>
-                <span>5</span>
-                <span>0</span>
+                <span>35</span><span>30</span><span>25</span><span>20</span>
+                <span>15</span><span>10</span><span>5</span><span>0</span>
               </div>
 
               <div class="dr-chart-scroll dr-chart-scroll-right">
                 <div class="dr-chart-bars dr-chart-bars-right">
-                  <div
-                    v-for="item in steelChartData"
-                    :key="item.batch"
-                    class="dr-bar-wrapper"
-                  >
+                  <div v-for="item in steelChartData" :key="item.batch" class="dr-bar-wrapper">
                     <div class="dr-bar" :style="{ height: barHeight(item.value) }">
-                      <!-- LÀM TRÒN 2 SỐ THẬP PHÂN Ở FE -->
                       <span class="dr-bar-value">{{ format2(item.value) }}</span>
                     </div>
                     <div class="dr-bar-labell">{{ item.batch }}</div>
@@ -753,23 +636,24 @@ watch(
 
     <!-- Alarm History button -->
     <div class="dr-alarm-row">
-      <button class="dr-alarm-btn" @click="showAlarmModal = true">
+      <button class="dr-alarm-btn" @click="openAlarmModal">
         {{ t("alarmHistory") }}
       </button>
     </div>
 
-    <!-- ALARM MODAL -->
+    <!-- ALARM MODAL (show only) -->
     <div v-if="showAlarmModal" class="alarm-backdrop">
       <div class="alarm-modal">
         <div class="alarm-header">
-          <span class="alarm-title">{{ t("dailyReport.batchReport") }}</span>
-          <button class="alarm-close" @click="showAlarmModal = false">
-            ✕
-          </button>
+          <span class="alarm-title">{{ t("alarmHistory") }}</span>
+          <button class="alarm-close" @click="showAlarmModal = false">✕</button>
         </div>
 
         <div class="alarm-table-wrapper">
-          <table class="alarm-table">
+          <div v-if="alarmLoading" class="alarm-loading">Loading...</div>
+          <div v-else-if="alarmError" class="alarm-error">{{ alarmError }}</div>
+
+          <table v-else class="alarm-table">
             <thead>
               <tr>
                 <th style="width: 50px">{{ t("alarmNo") }}</th>
@@ -783,25 +667,32 @@ watch(
             <tbody>
               <tr
                 v-for="(row, index) in alarmRows"
-                :key="index"
+                :key="row.id ?? index"
                 :class="{ 'alarm-row-alt': index % 2 === 0 }"
               >
                 <td class="center">{{ index + 1 }}</td>
                 <td>{{ row.type }}</td>
                 <td>{{ row.location }}</td>
-                <td>{{ row.start }}</td>
-                <td>{{ row.end }}</td>
+                <td>{{ row.start ?? row.start_time ?? "" }}</td>
+                <td>{{ row.end ?? row.end_time ?? "" }}</td>
                 <td class="center">{{ row.details }}</td>
+              </tr>
+
+              <tr v-if="alarmRows.length === 0">
+                <td class="center" colspan="6">No alarms</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
+
+    <p v-if="error" style="color: red">{{ error }}</p>
   </div>
 </template>
 
 <style scoped>
+/* ✅ giữ nguyên y chang CSS em gửi */
 .daily-report {
   display: flex;
   flex-direction: column;
@@ -859,7 +750,7 @@ watch(
 .dr-label-inline {
   padding-left: 15px;
   padding-right: 5px;
-  width: 72px;
+  width: 85px;
 }
 
 /* ====== BASE SELECT BOX ====== */
@@ -968,7 +859,7 @@ watch(
 
 /* SUMMARY */
 .dr-summary {
-    display: grid;
+  display: grid;
   grid-template-columns: 2fr 1.3fr 1.3fr;
   background: rgb(214, 220, 229);
   border-radius: 12px;
@@ -1021,7 +912,7 @@ watch(
 /* BATCH PANEL */
 .dr-batch-panel {
   background: rgb(214, 220, 229);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 10px 16px 16px;
 }
 
@@ -1049,7 +940,6 @@ watch(
 /* CARD */
 .dr-chart-card {
   background: #f8f9fc;
-  border-radius: 10px;
   padding: 15px 10px 10px 20px;
   box-sizing: border-box;
   width: 470px;
@@ -1090,7 +980,6 @@ watch(
 }
 
 /* ===================== CHART AREA ===================== */
-
 .dr-chart {
   display: flex;
   gap: 8px;
@@ -1196,7 +1085,6 @@ watch(
 .dr-chart-bars-right .dr-bar-wrapper {
   flex: 0 0 95px;
 }
-
 .dr-chart-bars-right .dr-bar {
   width: 40%;
 }
@@ -1299,6 +1187,15 @@ watch(
 .time {
   text-align: center;
   padding: 20px 10px;
+}
+
+.alarm-loading,
+.alarm-error {
+  padding: 12px;
+  text-align: center;
+}
+.alarm-error {
+  color: red;
 }
 
 /* ====== LINE CHART BOX dùng cho Chart.js ====== */

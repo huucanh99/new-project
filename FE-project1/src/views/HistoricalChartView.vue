@@ -1066,7 +1066,7 @@ onMounted(() => {
 
 /* CHARTS ROW */
 .charts-row {
-  margin-top: 18px;
+  margin-top: 16px;
   display: grid;
   /* Cho phép content overflow mà không đẩy bể layout */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
