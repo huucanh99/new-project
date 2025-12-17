@@ -104,7 +104,7 @@ const fetchDashboard = async () => {
     batchId.value = data.batchId || "";
     rawMachineStatus.value = data.machineStatus || "offline";
 
-    steelBallWeight.value = data.steelBallWeight ?? null;
+    steelBallWeight.value = data.steelBallTotal ?? data.steelBallWeight ?? null;
 
     voltage.value.powerSupply = data.voltage?.powerSupply ?? null;
     rpm.value.impeller1 = data.rpm?.impeller1 ?? null;

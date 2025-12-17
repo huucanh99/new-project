@@ -151,11 +151,11 @@ const batchInProgress = ref("");
 const loading = ref(false);
 const error = ref("");
 
-const API_BASE = "http://26.51.197.241:4000";
 // const API_BASE = "http://localhost:4000";
+const API_BASE = "http://26.51.197.241:4000";
 
-/* ====== ✅ Steel Ball "Before" lấy từ BE ====== */
-const steelBaseBefore = ref(5000); // fallback nếu BE chưa trả
+/* ====== ✅ LOGIC CŨ: Steel Ball Before = fixed value ====== */
+const STEEL_BEGIN = 5000; // KG
 
 /* ====== helper format số (làm tròn FE) ====== */
 const format2 = (value) => {
@@ -202,6 +202,7 @@ const loadDailyReport = async () => {
     powerBatches.value = data.powerBatches || [];
     steelBatches.value = data.steelBatches || [];
 
+    // summary (nếu BE có trả) – không bắt buộc
     summary.value = data.summary || summary.value;
 
     const newBatchIds = data.batchIds || [];
@@ -216,11 +217,6 @@ const loadDailyReport = async () => {
 
     const last = (data.powerBatches || []).slice(-1)[0];
     batchInProgress.value = last ? last.batch : "";
-
-    // ✅ BEFORE lấy từ BE (đúng theo ý Tiên)
-    if (data.steelBallBeforeKg != null) {
-      steelBaseBefore.value = Number(data.steelBallBeforeKg) || steelBaseBefore.value;
-    }
   } catch (err) {
     console.error(err);
     error.value = err.message || "Error loading daily report";
@@ -261,6 +257,7 @@ const barHeight = (v) => `${(v / maxBarValue) * maxHeight}px`;
 
 /* ====== TOTAL & DISPLAY CHO STEEL / POWER ====== */
 const steelTotal = computed(() => {
+  // steelLineData ở FE đang hiểu là "steel tiêu thụ theo time"
   if (selectedReport.value === "Batch Summary") {
     return steelLineData.value.reduce(
       (sum, item) => sum + (Number(item.value ?? item.steel_kg ?? 0) || 0),
@@ -280,11 +277,11 @@ const powerTotal = computed(() => {
   return powerBatches.value.reduce((sum, item) => sum + (Number(item.value || 0)), 0);
 });
 
-/* ✅ BEFORE/AFTER theo sensor BEFORE - steelUsed */
-const steelBeforeDisplay = computed(() => steelBaseBefore.value.toFixed(2));
+/* ====== ✅ LOGIC CŨ: BEFORE/AFTER = STEEL_BEGIN - steelUsed ====== */
+const steelBeforeDisplay = computed(() => STEEL_BEGIN.toFixed(2));
 
 const steelAfterDisplay = computed(() => {
-  const after = steelBaseBefore.value - steelTotal.value;
+  const after = STEEL_BEGIN - steelTotal.value;
   return (after > 0 ? after : 0).toFixed(2);
 });
 
@@ -332,16 +329,31 @@ const upsertPowerChart = () => {
     type: "line",
     data: {
       labels,
-      datasets: [{ label: "Power (kW)", data, borderWidth: 1.5, pointRadius: 2, tension: 0.2 }],
+      datasets: [
+        {
+          label: "Power (kW)",
+          data,
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.2,
+        },
+      ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      scales: { x: { type: "category" }, y: { beginAtZero: true } },
+      scales: {
+        x: { type: "category" },
+        y: { beginAtZero: true },
+      },
       plugins: {
         legend: { display: false },
         zoom: {
-          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: "x",
+          },
           pan: { enabled: true, mode: "x" },
         },
       },
@@ -376,16 +388,31 @@ const upsertSteelChart = () => {
     type: "line",
     data: {
       labels,
-      datasets: [{ label: "Steel (kg)", data, borderWidth: 1.5, pointRadius: 2, tension: 0.2 }],
+      datasets: [
+        {
+          label: "Steel (kg)",
+          data,
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.2,
+        },
+      ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      scales: { x: { type: "category" }, y: { beginAtZero: true } },
+      scales: {
+        x: { type: "category" },
+        y: { beginAtZero: true },
+      },
       plugins: {
         legend: { display: false },
         zoom: {
-          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: "x",
+          },
           pan: { enabled: true, mode: "x" },
         },
       },
@@ -434,7 +461,6 @@ watch(
   { deep: true }
 );
 </script>
-
 
 <template>
   <TimeClock class="sp-time" size="normal" align="left" />
