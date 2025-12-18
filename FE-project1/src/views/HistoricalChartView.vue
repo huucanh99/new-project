@@ -1,7 +1,31 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
 import { useI18n } from "@/languages/i18n";
+
+/* ===== Chart.js + Zoom plugin (GIỐNG Batch Summary) ===== */
+import {
+  Chart as ChartJS,
+  LineController,
+  LineElement,
+  PointElement,
+  LinearScale,
+  CategoryScale,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
+
+ChartJS.register(
+  LineController,
+  LineElement,
+  PointElement,
+  LinearScale,
+  CategoryScale,
+  Tooltip,
+  Legend,
+  zoomPlugin
+);
 
 // ==== i18n ====
 const { t } = useI18n();
@@ -77,8 +101,8 @@ const openToPicker = () => {
 };
 
 /* ==== SUMMARY DATA (từ BE – CHỈ DÙNG POWER + TIME) ==== */
-const powerTotal = ref(0);     // tổng power
-const totalMinutes = ref(0);   // tổng phút chạy (từ BE)
+const powerTotal = ref(0); // tổng power
+const totalMinutes = ref(0); // tổng phút chạy (từ BE)
 const timeHour = computed(() => Math.floor(totalMinutes.value / 60));
 const timeMinute = computed(() => totalMinutes.value % 60);
 
@@ -113,8 +137,7 @@ const bucketizeByInterval = (raw, intervalMinutes) => {
     if (Number.isNaN(dt.getTime())) return;
 
     const minutes = Math.floor(dt.getTime() / (1000 * 60));
-    const bucketStartMinutes =
-      Math.floor(minutes / intervalMinutes) * intervalMinutes;
+    const bucketStartMinutes = Math.floor(minutes / intervalMinutes) * intervalMinutes;
 
     const val = Number(p.value ?? p.y ?? 0) || 0;
     const prev = buckets.get(bucketStartMinutes) || 0;
@@ -134,7 +157,7 @@ const bucketizeByInterval = (raw, intervalMinutes) => {
     });
 };
 
-/* ====== DATA ĐÃ GOM INTERVAL ĐỂ VẼ LINE ====== */
+/* ====== DATA ĐÃ GOM INTERVAL ====== */
 const aggregatedCurrentRaw = computed(() =>
   bucketizeByInterval(rawSeriesCurrent.value, selectedCurrentInterval.value)
 );
@@ -142,29 +165,19 @@ const aggregatedWeightRaw = computed(() =>
   bucketizeByInterval(rawSeriesSteelBall.value, selectedWeightInterval.value)
 );
 
-/* map sang dạng {x:index, y:value, label} để vẽ + label trục X */
-const currentData = computed(() =>
-  aggregatedCurrentRaw.value.map((item, idx) => ({
-    x: idx,
-    y: Number(item.value || 0),
-    label: item.time,
-  }))
-);
-
+/* weightData: cộng dồn (giữ nguyên logic em đang dùng) */
 const weightData = computed(() => {
   let sum = 0;
-  return aggregatedWeightRaw.value.map((item, idx) => {
-    sum += Number(item.value || 0); // cộng dồn
+  return aggregatedWeightRaw.value.map((item) => {
+    sum += Number(item.value || 0);
     return {
-      x: idx,
-      y: sum,
       label: item.time,
+      y: sum,
     };
   });
 });
 
 /* ==== TỔNG STEEL / POWER (effective) ==== */
-// Steel: HOÀN TOÀN DÙNG TỪ rawSeriesSteelBall
 const steelTotalEffective = computed(() => {
   if (!rawSeriesSteelBall.value.length) return 0;
   return rawSeriesSteelBall.value.reduce(
@@ -173,7 +186,6 @@ const steelTotalEffective = computed(() => {
   );
 });
 
-// Power: ưu tiên BE, nếu 0 thì tính sum từ current
 const powerTotalEffective = computed(() => {
   const fromSummary = Number(powerTotal.value);
   if (Number.isFinite(fromSummary) && fromSummary > 0) return fromSummary;
@@ -186,9 +198,7 @@ const powerTotalEffective = computed(() => {
 });
 
 /* ==== DISPLAY SUMMARY (BEGIN/FROM/AFTER) ==== */
-const steelBeforeDisplay = computed(() => {
-  return STEEL_BEGIN.toFixed(2);
-});
+const steelBeforeDisplay = computed(() => STEEL_BEGIN.toFixed(2));
 
 const steelAfterDisplay = computed(() => {
   const used = steelTotalEffective.value;
@@ -196,175 +206,162 @@ const steelAfterDisplay = computed(() => {
   return (after > 0 ? after : 0).toFixed(2);
 });
 
-const steelTotalDisplay = computed(() =>
-  steelTotalEffective.value.toFixed(2)
-);
+const steelTotalDisplay = computed(() => steelTotalEffective.value.toFixed(2));
+const powerTotalDisplay = computed(() => powerTotalEffective.value.toFixed(2));
 
-const powerTotalDisplay = computed(() =>
-  powerTotalEffective.value.toFixed(2)
-);
+/* ===================== CHART.JS (2 charts) ===================== */
+const currentChartCanvas = ref(null);
+const weightChartCanvas = ref(null);
+const currentChartInstance = ref(null);
+const weightChartInstance = ref(null);
 
-/* ==== Chart config (SVG) ==== */
-const svgWidth = 400;
-const svgHeight = 150;
-
-/* margin vùng vẽ */
-const innerLeft = 40;
-const innerRight = 10;
-const innerTop = 30;
-const innerBottom = 25;
-const innerWidth = svgWidth - innerLeft - innerRight;
-const innerHeight = svgHeight - innerTop - innerBottom;
-
-/* padding để line không bắt đầu ngay trục Y */
-const lineLeftPadding = 15;
-const lineRightPadding = 15;
-const lineInnerWidth = innerWidth - lineLeftPadding - lineRightPadding;
-
-/* ====== scale Y theo kiểu batch summary, base quanh 35 ====== */
-const maxYCurrent = computed(() => {
-  const maxData = Math.max(0, ...currentData.value.map((d) => d.y));
-  // base: 35 cho 1h, 70 cho 2h
-  let base = selectedCurrentInterval.value === 60 ? 35 : 70;
-  const v = Math.max(base, maxData);
-  // bậc bước 5 hoặc 10 cho đẹp
-  const step = selectedCurrentInterval.value === 60 ? 5 : 10;
-  return Math.ceil(v / step) * step;
+/* data cho Chart.js */
+const currentChartJsData = computed(() => {
+  const labels = aggregatedCurrentRaw.value.map((p) => p.time || "");
+  const data = aggregatedCurrentRaw.value.map((p) => Number(p.value || 0) || 0);
+  return { labels, data };
 });
 
-const maxYWeight = computed(() => {
-  const maxData = Math.max(0, ...weightData.value.map((d) => d.y));
-  let base = selectedWeightInterval.value === 60 ? 35 : 70;
-  const step = selectedWeightInterval.value === 60 ? 5 : 10;
-  const v = Math.max(base, maxData);
-  return Math.ceil(v / step) * step;
+const weightChartJsData = computed(() => {
+  const labels = weightData.value.map((p) => p.label || "");
+  const data = weightData.value.map((p) => Number(p.y || 0) || 0);
+  return { labels, data };
 });
 
-/* ticks (8 tick giống bên batch summary: max -> 0) */
-const makeTicks = (max, steps) => {
-  const arr = [];
-  const step = max / steps;
-  for (let i = steps; i >= 0; i--) {
-    arr.push(Math.round(step * i));
-  }
-  return arr;
-};
+const buildZoomOptions = () => ({
+  zoom: {
+    zoom: {
+      wheel: { enabled: true },
+      pinch: { enabled: true },
+      mode: "x",
+    },
+    pan: { enabled: true, mode: "x" },
+  },
+});
 
-const currentTicks = computed(() => makeTicks(maxYCurrent.value, 7));
-const weightTicks = computed(() => makeTicks(maxYWeight.value, 7));
+const upsertCurrentChart = () => {
+  if (!currentChartCanvas.value) return;
 
-/* chuyển value→Y cho line & ticks */
-const mapY = (value, maxY) =>
-  innerTop + (1 - value / maxY) * innerHeight;
+  const canvas = currentChartCanvas.value;
+  const ctx = canvas.getContext("2d");
 
-const valueToYCurrent = (v) => mapY(v, maxYCurrent.value);
-const valueToYWeight = (v) => mapY(v, maxYWeight.value);
-
-/* ====== ZOOM NGANG + SCROLL ====== */
-const minZoom = 0.5;
-const maxZoom = 5;
-
-/* Current */
-const currentZoom = ref(1);
-const currentSvgWidth = computed(() => svgWidth * currentZoom.value);
-
-const onCurrentWheel = (e) => {
-  if (!currentData.value.length) return;
-  e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 0.9;
-  const next = currentZoom.value * factor;
-  currentZoom.value = Math.min(maxZoom, Math.max(minZoom, next));
-};
-
-/* Steel Ball */
-const weightZoom = ref(1);
-const weightSvgWidth = computed(() => svgWidth * weightZoom.value);
-const onWeightWheel = (e) => {
-  if (!weightData.value.length) return;
-  e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 0.9;
-  const next = weightZoom.value * factor;
-  weightZoom.value = Math.min(maxZoom, Math.max(minZoom, next));
-};
-
-/* line thẳng (Steel Ball) */
-const makeLinePoints = (data, maxY) => {
-  if (!data.length) return "";
-  const maxX = data[data.length - 1].x || 1;
-
-  return data
-    .map((d) => {
-      const px =
-        innerLeft + lineLeftPadding + (d.x / maxX) * lineInnerWidth;
-      const py = mapY(d.y, maxY);
-      return `${px},${py}`;
-    })
-    .join(" ");
-};
-
-/* đường cong mượt Current (Catmull–Rom -> Bézier) */
-const makeSmoothPath = (data, maxY) => {
-  if (!data.length) return "";
-
-  const maxX = data[data.length - 1].x || 1;
-
-  const pts = data.map((d) => ({
-    x: innerLeft + lineLeftPadding + (d.x / maxX) * lineInnerWidth,
-    y: mapY(d.y, maxY),
-  }));
-
-  if (pts.length === 1) {
-    const p = pts[0];
-    return `M ${p.x} ${p.y}`;
+  const existing = ChartJS.getChart(canvas);
+  if (existing) existing.destroy();
+  if (currentChartInstance.value) {
+    currentChartInstance.value.destroy();
+    currentChartInstance.value = null;
   }
 
-  let dStr = `M ${pts[0].x} ${pts[0].y}`;
+  const { labels, data } = currentChartJsData.value;
 
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] || p2;
-
-    const cp1x = p1.x + (p2.x - p0.x) / 6;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-    const cp2x = p2.x - (p3.x - p1.x) / 6;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-
-    dStr += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${p2.x} ${p2.y}`;
-  }
-
-  return dStr;
+  currentChartInstance.value = new ChartJS(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Current (A)",
+          data,
+          borderWidth: 2,
+          pointRadius: 2,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          type: "category",
+          ticks: { autoSkip: true, maxTicksLimit: 10 },
+        },
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { display: false },
+        ...buildZoomOptions(),
+      },
+    },
+  });
 };
 
-/* đường cong Current (A) */
-const currentPath = computed(() =>
-  makeSmoothPath(currentData.value, maxYCurrent.value)
-);
+const upsertWeightChart = () => {
+  if (!weightChartCanvas.value) return;
 
-/* polyline Steel Ball */
-const weightPoints = computed(() =>
-  makeLinePoints(weightData.value, maxYWeight.value)
-);
+  const canvas = weightChartCanvas.value;
+  const ctx = canvas.getContext("2d");
 
-/* ====== LABEL X GIỐNG powerTimeLabels / steelTimeLabels ====== */
-const currentTimeLabels = computed(() => {
-  const data = currentData.value;
-  if (!data.length) return [];
-  let step = 1;
-  if (data.length > 24) step = 4;
-  else if (data.length > 12) step = 2;
-  return data.filter((_, idx) => idx % step === 0);
+  const existing = ChartJS.getChart(canvas);
+  if (existing) existing.destroy();
+  if (weightChartInstance.value) {
+    weightChartInstance.value.destroy();
+    weightChartInstance.value = null;
+  }
+
+  const { labels, data } = weightChartJsData.value;
+
+  weightChartInstance.value = new ChartJS(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Steel Ball (KG)",
+          data,
+          borderWidth: 2,
+          pointRadius: 2,
+          tension: 0.2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          type: "category",
+          ticks: { autoSkip: true, maxTicksLimit: 10 },
+        },
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { display: false },
+        ...buildZoomOptions(),
+      },
+    },
+  });
+};
+
+onUnmounted(() => {
+  if (currentChartInstance.value) {
+    currentChartInstance.value.destroy();
+    currentChartInstance.value = null;
+  }
+  if (weightChartInstance.value) {
+    weightChartInstance.value.destroy();
+    weightChartInstance.value = null;
+  }
 });
 
-const weightTimeLabels = computed(() => {
-  const data = weightData.value;
-  if (!data.length) return [];
-  let step = 1;
-  if (data.length > 24) step = 4;
-  else if (data.length > 12) step = 2;
-  return data.filter((_, idx) => idx % step === 0);
-});
+/* redraw khi data/interval thay đổi */
+watch(
+  [aggregatedCurrentRaw, selectedCurrentInterval],
+  async () => {
+    await nextTick();
+    upsertCurrentChart();
+  },
+  { deep: true }
+);
+
+watch(
+  [weightData, selectedWeightInterval],
+  async () => {
+    await nextTick();
+    upsertWeightChart();
+  },
+  { deep: true }
+);
 
 /* Power detail cards – vẫn fake tạm */
 const powerCards = computed(() => [
@@ -374,42 +371,100 @@ const powerCards = computed(() => [
   { label: t("dustCollector"), value: "123.01" },
 ]);
 
-/* ==== Download CSV (Excel mở được) ==== */
+/* ==== Download CSV (export ALL data on page) ==== */
 const downloadCsv = () => {
-  const currentHeader = ["Index", "Current(A)"];
-  const weightHeader = ["Index", "SteelBallWeight(KG)"];
+  // helper escape csv
+  const esc = (v) => {
+    const s = String(v ?? "");
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
 
-  const currentRows = currentData.value.map((d, idx) => [idx, d.y]);
-  const weightRows = weightData.value.map((d, idx) => [idx, d.y]);
+  // BOM để Excel mở không lỗi encoding
+  let csv = "\uFEFF";
 
-  let csv = "";
+  // ===== 0) META =====
+  const { from, to } = buildRangeParams();
+  csv += "META\n";
+  csv += ["reportType", "from", "to", "currentIntervalMin", "weightIntervalMin"].map(esc).join(",") + "\n";
+  csv += [selectedReportType.value, from, to, selectedCurrentInterval.value, selectedWeightInterval.value]
+    .map(esc)
+    .join(",") + "\n\n";
 
-  // Bảng Current
-  csv += "Current (A)\n";
-  csv += currentHeader.join(",") + "\n";
-  currentRows.forEach((row) => {
-    csv += row.join(",") + "\n";
+  // ===== 1) SUMMARY (Steel ball + Power + Time) =====
+  // Steel begin/used/after đang hiển thị
+  // Power đang hiển thị: powerTotalEffective
+  // Time đang hiển thị: totalMinutes -> hour/minute
+  csv += "SUMMARY\n";
+  csv += [
+    "steel_begin_kg",
+    "steel_used_kg",
+    "steel_after_kg",
+    "power_total",
+    "time_total_minutes",
+    "time_hours",
+    "time_minutes",
+  ].map(esc).join(",") + "\n";
+
+  csv += [
+    STEEL_BEGIN,
+    Number(steelTotalEffective.value || 0),
+    Number(steelAfterDisplay.value || 0),
+    Number(powerTotalEffective.value || 0),
+    Number(totalMinutes.value || 0),
+    Number(timeHour.value || 0),
+    Number(timeMinute.value || 0),
+  ].map(esc).join(",") + "\n\n";
+
+  // ===== 2) RAW SERIES CURRENT (đúng data API seriesCurrent) =====
+  csv += "RAW_CURRENT\n";
+  csv += ["time", "value"].map(esc).join(",") + "\n";
+  (rawSeriesCurrent.value || []).forEach((p) => {
+    csv += [p.time ?? p.x ?? "", Number(p.value ?? p.y ?? 0)].map(esc).join(",") + "\n";
   });
-
   csv += "\n";
 
-  // Bảng Steel Ball Weight
-  csv += "Steel Ball Weight\n";
-  csv += weightHeader.join(",") + "\n";
-  weightRows.forEach((row) => {
-    csv += row.join(",") + "\n";
+  // ===== 3) RAW SERIES STEEL BALL (đúng data API seriesSteelBall) =====
+  csv += "RAW_STEEL_BALL\n";
+  csv += ["time", "value"].map(esc).join(",") + "\n";
+  (rawSeriesSteelBall.value || []).forEach((p) => {
+    csv += [p.time ?? p.x ?? "", Number(p.value ?? p.y ?? 0)].map(esc).join(",") + "\n";
+  });
+  csv += "\n";
+
+  // ===== 4) AGG CURRENT (đúng chart đang vẽ) =====
+  csv += "AGG_CURRENT\n";
+  csv += ["index", "bucket_time", "sum_value"].map(esc).join(",") + "\n";
+  (aggregatedCurrentRaw.value || []).forEach((d, idx) => {
+    csv += [idx, d.time, Number(d.value || 0)].map(esc).join(",") + "\n";
+  });
+  csv += "\n";
+
+  // ===== 5) AGG STEEL BALL (bucket + cumulative giống chart) =====
+  csv += "AGG_STEEL_BALL\n";
+  csv += ["index", "bucket_time", "bucket_sum", "cumulative"].map(esc).join(",") + "\n";
+  let cumulative = 0;
+  (aggregatedWeightRaw.value || []).forEach((d, idx) => {
+    const bucketSum = Number(d.value || 0);
+    cumulative += bucketSum;
+    csv += [idx, d.time, bucketSum, Number(cumulative.toFixed(2))].map(esc).join(",") + "\n";
   });
 
+  // ===== download =====
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.setAttribute("download", "historical-report.csv");
+  link.setAttribute(
+    "download",
+    `historical-report_ALL_${selectedReportType.value}_${from}_to_${to}.csv`
+  );
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 };
+
 
 /* ==== Call API /api/historical-report ==== */
 // const API_BASE = "http://localhost:4000";
@@ -419,15 +474,9 @@ const error = ref("");
 
 const buildRangeParams = () => {
   const type = selectedReportType.value;
-  if (type === "daily") {
-    return { from: fromDate.value, to: toDate.value };
-  }
-  if (type === "monthly") {
-    return { from: fromMonth.value, to: toMonth.value };
-  }
-  if (type === "yearly") {
-    return { from: fromYear.value, to: toYear.value };
-  }
+  if (type === "daily") return { from: fromDate.value, to: toDate.value };
+  if (type === "monthly") return { from: fromMonth.value, to: toMonth.value };
+  if (type === "yearly") return { from: fromYear.value, to: toYear.value };
   return { from: fromDate.value, to: toDate.value };
 };
 
@@ -444,33 +493,24 @@ const fetchHistorical = async () => {
       to,
     });
 
-    const res = await fetch(
-      `${API_BASE}/api/historical-report?${params.toString()}`
-    );
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
+    const res = await fetch(`${API_BASE}/api/historical-report?${params.toString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();
 
-    // summary (CHỈ DÙNG POWER + TIME)
     const sum = data.summary || {};
-
-    powerTotal.value = Number(
-      sum.totalPowerKw ?? sum.totalPower ?? 0
-    );
+    powerTotal.value = Number(sum.totalPowerKw ?? sum.totalPower ?? 0);
 
     const totalHours = Number(sum.totalTimeHours || 0);
     totalMinutes.value = Math.round(totalHours * 60);
 
-    // series (raw) – STEEL dùng để tính TOTAL + AFTER
     rawSeriesCurrent.value = data.seriesCurrent || [];
     rawSeriesSteelBall.value = data.seriesSteelBall || [];
 
-    // reset zoom mỗi lần search
-    currentZoom.value = 1;
-    weightZoom.value = 1;
+    // dựng chart sau khi data về
+    await nextTick();
+    upsertCurrentChart();
+    upsertWeightChart();
   } catch (e) {
     console.error(e);
     error.value = e.message || "Error loading historical report";
@@ -489,14 +529,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- dùng đồng hồ real-time -->
   <TimeClock class="sp-time" size="normal" align="left" />
 
   <div class="historical-page">
     <!-- TOP BAR -->
     <header class="top-bar">
       <div class="top-filters">
-        <!-- Report type -->
         <div class="filter-group">
           <span class="filter-label">{{ t("historicalReportTypeLabel") }}</span>
           <select v-model="selectedReportType" class="select-box select-report">
@@ -506,7 +544,6 @@ onMounted(() => {
           </select>
         </div>
 
-        <!-- Daily / Monthly -->
         <div
           class="filter-group"
           v-if="selectedReportType === 'daily' || selectedReportType === 'monthly'"
@@ -516,7 +553,7 @@ onMounted(() => {
             <div class="date-display" @click="openFromPicker">
               <span>
                 {{
-                  selectedReportType === 'daily'
+                  selectedReportType === "daily"
                     ? fromDateDisplay
                     : fromMonthDisplay
                 }}
@@ -524,7 +561,6 @@ onMounted(() => {
               <span class="caret">▾</span>
             </div>
 
-            <!-- input ẩn: Daily -->
             <input
               v-if="selectedReportType === 'daily'"
               ref="fromDateInput"
@@ -532,7 +568,6 @@ onMounted(() => {
               v-model="fromDate"
               class="hidden-date-input"
             />
-            <!-- input ẩn: Monthly -->
             <input
               v-else
               ref="fromMonthInput"
@@ -549,7 +584,7 @@ onMounted(() => {
             <div class="date-display" @click="openToPicker">
               <span>
                 {{
-                  selectedReportType === 'daily'
+                  selectedReportType === "daily"
                     ? toDateDisplay
                     : toMonthDisplay
                 }}
@@ -557,7 +592,6 @@ onMounted(() => {
               <span class="caret">▾</span>
             </div>
 
-            <!-- input ẩn: Daily -->
             <input
               v-if="selectedReportType === 'daily'"
               ref="toDateInput"
@@ -565,7 +599,6 @@ onMounted(() => {
               v-model="toDate"
               class="hidden-date-input"
             />
-            <!-- input ẩn: Monthly -->
             <input
               v-else
               ref="toMonthInput"
@@ -580,11 +613,7 @@ onMounted(() => {
         <div class="filter-group" v-else>
           <div class="year-select-wrapper">
             <select v-model="fromYear" class="select-box year-select">
-              <option
-                v-for="y in yearOptions"
-                :key="'from-' + y"
-                :value="String(y)"
-              >
+              <option v-for="y in yearOptions" :key="'from-' + y" :value="String(y)">
                 {{ y }}
               </option>
             </select>
@@ -594,11 +623,7 @@ onMounted(() => {
 
           <div class="year-select-wrapper">
             <select v-model="toYear" class="select-box year-select">
-              <option
-                v-for="y in yearOptions"
-                :key="'to-' + y"
-                :value="String(y)"
-              >
+              <option v-for="y in yearOptions" :key="'to-' + y" :value="String(y)">
                 {{ y }}
               </option>
             </select>
@@ -619,7 +644,6 @@ onMounted(() => {
 
     <!-- SUMMARY ROW -->
     <section class="dr-summary">
-      <!-- Steel Ball -->
       <div class="dr-summary-card">
         <div class="dr-summary-title">{{ t("dailyReport.steelBall") }}</div>
 
@@ -647,29 +671,20 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Power -->
       <div class="dr-summary-card">
-        <div class="dr-summary-title">{{ t("power") }}</div>
-
+        <div class="dr-summary-title">{{ t("power") }} (kWh)</div>
         <div class="dr-summary-content center">
           <span class="big">{{ powerTotalDisplay }}</span>
           <span class="unitt">kW</span>
         </div>
       </div>
 
-      <!-- Time -->
       <div class="dr-summary-card">
         <div class="dr-summary-title">{{ t("dailyReport.time") }}</div>
-
         <div class="dr-summary-content time">
-          <span class="big">
-            {{ timeHour }}
-          </span>
+          <span class="big">{{ timeHour }}</span>
           <span class="unitt">h</span>
-
-          <span class="big">
-            {{ timeMinute.toString().padStart(2, "0") }}
-          </span>
+          <span class="big">{{ timeMinute.toString().padStart(2, "0") }}</span>
           <span class="unitt">m</span>
         </div>
       </div>
@@ -681,7 +696,6 @@ onMounted(() => {
       <div class="chart-card">
         <div class="chart-title">{{ t("current") }}</div>
 
-        <!-- nút 1h / 2h giống batch summary -->
         <div class="interval-toggle">
           <button
             v-for="opt in intervalOptions"
@@ -695,67 +709,9 @@ onMounted(() => {
         </div>
 
         <div class="chart-inner">
-          <!-- OUTER: box cố định, có overflow-x -->
-          <div class="chart-area" @wheel="onCurrentWheel">
-            <!-- INNER: rộng theo zoom -->
-            <div
-              class="chart-inner-scroll"
-              :style="{ width: currentSvgWidth + 'px' }"
-            >
-              <svg
-                :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
-                preserveAspectRatio="none"
-                class="chart-svg"
-              >
-                <!-- UNIT -->
-                <text
-                  :x="innerLeft - 7"
-                  :y="innerTop - 18"
-                  text-anchor="end"
-                  class="y-unit"
-                >
-                  (A)
-                </text>
-
-                <!-- TICKS -->
-                <g v-for="tick in currentTicks" :key="'cg-' + tick">
-                  <text
-                    :x="innerLeft - 10"
-                    :y="valueToYCurrent(tick) + 3"
-                    text-anchor="end"
-                    class="y-tick-text"
-                  >
-                    {{ tick }}
-                  </text>
-                </g>
-
-                <!-- trục X (0) -->
-                <line
-                  :x1="innerLeft"
-                  :y1="valueToYCurrent(0)"
-                  :x2="svgWidth - innerRight"
-                  :y2="valueToYCurrent(0)"
-                  class="axis-line"
-                />
-                <!-- trục Y -->
-                <line
-                  :x1="innerLeft"
-                  :y1="valueToYCurrent(currentTicks[0])"
-                  :x2="innerLeft"
-                  :y2="valueToYCurrent(0)"
-                  class="axis-line"
-                />
-
-                <!-- đường cong Current (A) -->
-                <path :d="currentPath" class="chart-line" />
-              </svg>
-
-              <!-- Label X -->
-              <div class="chart-time-row">
-                <span v-for="(d, idx) in currentTimeLabels" :key="'ct-' + idx">
-                  {{ d.label }}
-                </span>
-              </div>
+          <div class="chart-area">
+            <div class="chartjs-wrapper">
+              <canvas ref="currentChartCanvas"></canvas>
             </div>
           </div>
         </div>
@@ -763,9 +719,8 @@ onMounted(() => {
 
       <!-- Steel Ball Weight -->
       <div class="chart-card">
-        <div class="chart-title">{{ t("steelBallWeight") }}</div>
+        <div class="chart-title">{{ t("steelBallWeight") }} (KG)</div>
 
-        <!-- nút 1h / 2h -->
         <div class="interval-toggle">
           <button
             v-for="opt in intervalOptions"
@@ -779,65 +734,9 @@ onMounted(() => {
         </div>
 
         <div class="chart-inner">
-          <div class="chart-area" @wheel="onWeightWheel">
-            <div
-              class="chart-inner-scroll"
-              :style="{ width: weightSvgWidth + 'px' }"
-            >
-              <svg
-                :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
-                preserveAspectRatio="none"
-                class="chart-svg"
-              >
-                <!-- UNIT -->
-                <text
-                  :x="innerLeft - 10"
-                  :y="innerTop - 17"
-                  text-anchor="end"
-                  class="y-unit"
-                >
-                  (KG)
-                </text>
-
-                <!-- TICKS -->
-                <g v-for="tick in weightTicks" :key="'wg-' + tick">
-                  <text
-                    :x="innerLeft - 10"
-                    :y="valueToYWeight(tick) + 3"
-                    text-anchor="end"
-                    class="y-tick-text"
-                  >
-                    {{ tick }}
-                  </text>
-                </g>
-
-                <!-- trục X (0) -->
-                <line
-                  :x1="innerLeft"
-                  :y1="valueToYWeight(0)"
-                  :x2="svgWidth - innerRight"
-                  :y2="valueToYWeight(0)"
-                  class="axis-line"
-                />
-                <!-- trục Y -->
-                <line
-                  :x1="innerLeft"
-                  :y1="valueToYWeight(weightTicks[0])"
-                  :x2="innerLeft"
-                  :y2="valueToYWeight(0)"
-                  class="axis-line"
-                />
-
-                <!-- đường line Steel Ball -->
-                <polyline :points="weightPoints" class="chart-line" />
-              </svg>
-
-              <!-- Label X -->
-              <div class="chart-time-row">
-                <span v-for="(d, idx) in weightTimeLabels" :key="'wt-' + idx">
-                  {{ d.label }}
-                </span>
-              </div>
+          <div class="chart-area">
+            <div class="chartjs-wrapper">
+              <canvas ref="weightChartCanvas"></canvas>
             </div>
           </div>
         </div>
@@ -855,7 +754,6 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- có thể hiển thị error nếu muốn -->
     <p v-if="error" style="color: red; margin-top: 8px">{{ error }}</p>
   </div>
 </template>
@@ -863,7 +761,6 @@ onMounted(() => {
 <style scoped>
 .historical-page {
   box-sizing: border-box;
-  /* ❌ BỎ font-family để dùng chung font với DailyReportView */
 }
 
 /* TOP BAR */
@@ -917,7 +814,7 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* SUMMARY ROW (y chang style bên Daily) */
+/* SUMMARY */
 .dr-summary {
   display: grid;
   grid-template-columns: 2fr 1.3fr 1.3fr;
@@ -947,10 +844,10 @@ onMounted(() => {
   justify-content: center;
   gap: 8px;
 }
-.center{
+.center {
   padding: 20px 0px;
 }
-.time{
+.time {
   padding: 20px 0px;
 }
 .dr-summary-content.steel {
@@ -961,12 +858,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .big {
-  font-size: 45px;
+  font-size: 30px;
   font-weight: 600;
 }
 
@@ -975,12 +872,12 @@ onMounted(() => {
   font-weight: 500;
   padding-left: 10px;
 }
-.unitt{
-  font-size: 25px;
+.unitt {
+  font-size: 23px;
   font-weight: 500;
-  padding-left: 10px;
-  padding-top: 15px;
+  padding:8px 0px;
 }
+
 /* Date display */
 .date-wrapper {
   position: relative;
@@ -1068,7 +965,6 @@ onMounted(() => {
 .charts-row {
   margin-top: 16px;
   display: grid;
-  /* Cho phép content overflow mà không đẩy bể layout */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   background: rgb(214, 220, 229);
   gap: 10px;
@@ -1079,7 +975,6 @@ onMounted(() => {
 .chart-card {
   padding-bottom: 13px;
   position: relative;
-  /* quan trọng để grid không bị kéo giãn theo nội dung */
   min-width: 0;
 }
 
@@ -1096,66 +991,26 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* OUTER scroll box */
+/* OUTER scroll box (giữ nguyên khung) */
 .chart-area {
   width: 100%;
   height: 240px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden; /* Chart.js zoom/pan trong canvas, không cần scroll ngang */
   box-sizing: border-box;
   border-left: 1px solid #ccc;
   border-bottom: 1px solid #ccc;
 }
 
-/* SVG */
-.chart-svg {
+/* Chart.js wrapper */
+.chartjs-wrapper {
   width: 100%;
   height: 100%;
+}
+
+.chartjs-wrapper canvas {
+  width: 100% !important;
+  height: 100% !important;
   display: block;
-}
-
-/* container bên trong cho svg + time row, width bind theo zoom */
-.chart-inner-scroll {
-  display: flex;
-  flex-direction: column;
-}
-
-/* trục X/Y */
-.axis-line {
-  stroke: #000;
-  stroke-width: 1;
-}
-
-/* tick text + unit */
-.y-tick-text {
-  font-size: 10px;
-}
-
-.y-unit {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* đường line */
-.chart-line {
-  fill: none;
-  stroke: #000;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* hàng label X giống line-chart-time-row ở trang kia */
-.chart-time-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 12px 6px 48px;
-  font-size: 10px;
-}
-
-.chart-time-row span {
-  min-width: 0;
-  text-align: center;
 }
 
 /* POWER ROW */
@@ -1198,7 +1053,7 @@ onMounted(() => {
   font-weight: 600;
 }
 
-/* Interval toggle giống batch summary */
+/* Interval toggle */
 .interval-toggle {
   position: absolute;
   top: 4px;

@@ -44,10 +44,9 @@ const reportOptions = [
   { value: "Shift Report", labelKey: "dailyReport.shiftReport" },
   { value: "Batch Summary", labelKey: "dailyReport.batchSummary" },
 ];
-
 const selectedReport = ref(reportOptions[0].value);
 
-// ====== Date: mặc định hôm nay ======
+/* ====== Date: mặc định hôm nay ====== */
 const makeTodayStr = () => {
   const today = new Date();
   const y = today.getFullYear();
@@ -55,7 +54,6 @@ const makeTodayStr = () => {
   const d = String(today.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 };
-
 const selectedDate = ref(makeTodayStr());
 const dateInput = ref(null);
 
@@ -70,22 +68,19 @@ const formattedDate = computed(() => {
 });
 
 const openDatePicker = () => {
-  if (dateInput.value && dateInput.value.showPicker) {
-    dateInput.value.showPicker();
-  } else if (dateInput.value) {
-    dateInput.value.focus();
-  }
+  if (dateInput.value && dateInput.value.showPicker) dateInput.value.showPicker();
+  else if (dateInput.value) dateInput.value.focus();
 };
 
-// ====== Shift (chỉ dùng cho Shift Report) ======
+/* ====== Shift (chỉ dùng cho Shift Report) ====== */
 const shiftOptions = [
-  { value: 2, labelKey: "dailyReport.dayShift" }, // Day Shift
-  { value: 3, labelKey: "dailyReport.afternoonShift" }, // Afternoon Shift
-  { value: 1, labelKey: "dailyReport.nightShift" }, // Night Shift
+  { value: 2, labelKey: "dailyReport.dayShift" },
+  { value: 3, labelKey: "dailyReport.afternoonShift" },
+  { value: 1, labelKey: "dailyReport.nightShift" },
 ];
-const selectedShift = ref(shiftOptions[0].value); // default: Day Shift (2)
+const selectedShift = ref(shiftOptions[0].value);
 
-// ====== Batch ID (cho Batch Summary) – lấy từ BE ======
+/* ====== Batch ID (cho Batch Summary) – lấy từ BE ====== */
 const batchIdOptions = ref([]);
 const selectedBatchId = ref("");
 
@@ -109,7 +104,7 @@ const draggingPart = ref(null);
 const lastY = ref(0);
 
 const onTimeMouseDown = (part, e) => {
-  draggingPart.value = part; // "hour" | "minute"
+  draggingPart.value = part;
   lastY.value = e.clientY;
   window.addEventListener("mousemove", onTimeMouseMove);
   window.addEventListener("mouseup", onTimeMouseUp);
@@ -136,10 +131,11 @@ const onTimeMouseUp = () => {
 };
 
 /* ====== STATE NHẬN TỪ BACKEND ====== */
-const powerTimeData = ref([]); // raw power theo time (Batch Summary) {time, value}
-const steelLineData = ref([]); // raw steel theo time (Batch Summary) {time, value}
-const powerBatches = ref([]); // theo batch (Daily/Shift)
+const powerTimeData = ref([]); // Batch Summary
+const steelLineData = ref([]); // Batch Summary
+const powerBatches = ref([]); // Daily/Shift
 const steelBatches = ref([]);
+
 const summary = ref({
   totalPower: 0,
   totalSteel: 0,
@@ -154,14 +150,69 @@ const error = ref("");
 // const API_BASE = "http://localhost:4000";
 const API_BASE = "http://26.51.197.241:4000";
 
-/* ====== ✅ LOGIC CŨ: Steel Ball Before = fixed value ====== */
-const STEEL_BEGIN = 5000; // KG
+/* ====== ✅ Steel begin fixed ====== */
+const STEEL_BEGIN = 5000;
 
-/* ====== helper format số (làm tròn FE) ====== */
+/* ====== ✅ Steel Ball Type + Carbon settings ====== */
+const steelBallType = ref("");
+const carbonCoefficient = ref(null);
+const carbonUnit = ref("kgCO2/kWh");
+
 const format2 = (value) => {
   const n = Number(value);
   if (Number.isNaN(n)) return "0.00";
   return n.toFixed(2);
+};
+
+/* ====== ✅ fetch coefficient from settings API ====== */
+const fetchCarbonSetting = async () => {
+  if (!steelBallType.value) {
+    carbonCoefficient.value = null;
+    carbonUnit.value = "kgCO2/kWh";
+    return;
+  }
+
+  try {
+    // gửi nhiều key để khớp BE của em (steelBallType / steel_type / steelType)
+    const qs = new URLSearchParams();
+    qs.set("steelBallType", steelBallType.value);
+    qs.set("steel_type", steelBallType.value);
+    qs.set("steelType", steelBallType.value);
+
+    const res = await fetch(`${API_BASE}/api/steel-type-settings?${qs.toString()}`);
+
+    if (!res.ok) {
+      carbonCoefficient.value = null;
+      carbonUnit.value = "kgCO2/kWh";
+      return;
+    }
+
+    const raw = await res.json();
+
+    // BE có thể trả object hoặc array => normalize
+    const s = Array.isArray(raw) ? raw[0] : raw;
+
+    const coeff =
+      s?.carbonCoefficient ??
+      s?.carbon_coefficient ??
+      s?.coefficient ??
+      s?.value ??
+      null;
+
+    const unit =
+      s?.carbonUnit ??
+      s?.carbon_unit ??
+      s?.unit ??
+      "kgCO2/kWh";
+
+    const num = Number(coeff);
+    carbonCoefficient.value = Number.isNaN(num) ? null : num;
+    carbonUnit.value = unit || "kgCO2/kWh";
+  } catch (e) {
+    console.error("fetchCarbonSetting error:", e);
+    carbonCoefficient.value = null;
+    carbonUnit.value = "kgCO2/kWh";
+  }
 };
 
 /* ====== GỌI API /api/daily-report ====== */
@@ -176,33 +227,36 @@ const loadDailyReport = async () => {
       reportType: selectedReport.value,
     });
 
-    // gửi batchId khi Batch Summary
     if (selectedReport.value === "Batch Summary" && selectedBatchId.value) {
       params.append("batchId", selectedBatchId.value);
     }
 
-    // gửi shift khi Shift Report
     if (selectedReport.value === "Shift Report" && selectedShift.value != null) {
-      params.append("shift", String(selectedShift.value)); // 1 / 2 / 3
+      params.append("shift", String(selectedShift.value));
     }
 
     const res = await fetch(`${API_BASE}/api/daily-report?${params.toString()}`);
-    if (!res.ok) {
-      throw new Error(`Failed to load daily report (status ${res.status})`);
-    }
+    if (!res.ok) throw new Error(`Failed to load daily report (status ${res.status})`);
 
     const data = await res.json();
 
-    // ====== POWER time-series (Batch Summary) ======
+    // ✅ steelBallType từ BE (fallback nhiều key)
+    steelBallType.value =
+      data?.steelBallType ||
+      data?.steel_ball_type ||
+      data?.steelBallTypeName ||
+      data?.type ||
+      (data?.summary && (data.summary.steelBallType || data.summary.steel_ball_type)) ||
+      "";
+
+    // time series
     powerTimeData.value = data.powerTimeData || [];
-    // ====== STEEL time-series (Batch Summary) ======
     steelLineData.value = data.steelLineData || [];
 
-    // ====== BATCH LEVEL (Daily / Shift) ======
+    // batch level
     powerBatches.value = data.powerBatches || [];
     steelBatches.value = data.steelBatches || [];
 
-    // summary (nếu BE có trả) – không bắt buộc
     summary.value = data.summary || summary.value;
 
     const newBatchIds = data.batchIds || [];
@@ -217,6 +271,9 @@ const loadDailyReport = async () => {
 
     const last = (data.powerBatches || []).slice(-1)[0];
     batchInProgress.value = last ? last.batch : "";
+
+    // ✅ sau khi có type -> lấy coefficient
+    await fetchCarbonSetting();
   } catch (err) {
     console.error(err);
     error.value = err.message || "Error loading daily report";
@@ -257,7 +314,6 @@ const barHeight = (v) => `${(v / maxBarValue) * maxHeight}px`;
 
 /* ====== TOTAL & DISPLAY CHO STEEL / POWER ====== */
 const steelTotal = computed(() => {
-  // steelLineData ở FE đang hiểu là "steel tiêu thụ theo time"
   if (selectedReport.value === "Batch Summary") {
     return steelLineData.value.reduce(
       (sum, item) => sum + (Number(item.value ?? item.steel_kg ?? 0) || 0),
@@ -270,16 +326,25 @@ const steelTotal = computed(() => {
 const powerTotal = computed(() => {
   if (selectedReport.value === "Batch Summary") {
     return powerTimeData.value.reduce(
-      (sum, item) => sum + (Number(item.value ?? item.power_kw ?? 0) || 0),
+      (sum, item) => sum + (Number(item.value ?? item.power_kwh ?? item.power_kw ?? 0) || 0),
       0
     );
   }
   return powerBatches.value.reduce((sum, item) => sum + (Number(item.value || 0)), 0);
 });
 
-/* ====== ✅ LOGIC CŨ: BEFORE/AFTER = STEEL_BEGIN - steelUsed ====== */
-const steelBeforeDisplay = computed(() => STEEL_BEGIN.toFixed(2));
+/* ====== ✅ Carbon emission total ====== */
+const carbonEmissionTotal = computed(() => {
+  const coeff = Number(carbonCoefficient.value);
+  if (Number.isNaN(coeff)) return 0;
+  const energy = Number(powerTotal.value);
+  if (Number.isNaN(energy)) return 0;
+  return energy * coeff;
+});
+const carbonEmissionDisplay = computed(() => format2(carbonEmissionTotal.value));
 
+/* ====== BEFORE/AFTER ====== */
+const steelBeforeDisplay = computed(() => STEEL_BEGIN.toFixed(2));
 const steelAfterDisplay = computed(() => {
   const after = STEEL_BEGIN - steelTotal.value;
   return (after > 0 ? after : 0).toFixed(2);
@@ -288,10 +353,12 @@ const steelAfterDisplay = computed(() => {
 const steelTotalDisplay = computed(() => steelTotal.value.toFixed(2));
 const powerTotalDisplay = computed(() => powerTotal.value.toFixed(2));
 
-/* ====== DATA CHO CHART.JS (Batch Summary) – dùng raw data ====== */
+/* ====== Chart.JS data (Batch Summary) ====== */
 const powerChartJsData = computed(() => {
   const labels = powerTimeData.value.map((p) => p.time || "");
-  const data = powerTimeData.value.map((p) => Number(p.value ?? p.power_kw ?? 0) || 0);
+  const data = powerTimeData.value.map(
+    (p) => Number(p.value ?? p.power_kwh ?? p.power_kw ?? 0) || 0
+  );
   return { labels, data };
 });
 
@@ -301,7 +368,7 @@ const steelChartJsData = computed(() => {
   return { labels, data };
 });
 
-/* ====== HÀM TẠO / UPDATE Chart.js ====== */
+/* ====== upsert charts ====== */
 const upsertPowerChart = () => {
   if (selectedReport.value !== "Batch Summary") {
     if (powerChartInstance.value) {
@@ -310,7 +377,6 @@ const upsertPowerChart = () => {
     }
     return;
   }
-
   if (!powerChartCanvas.value) return;
 
   const { labels, data } = powerChartJsData.value;
@@ -319,7 +385,6 @@ const upsertPowerChart = () => {
 
   const existing = ChartJS.getChart(canvas);
   if (existing) existing.destroy();
-
   if (powerChartInstance.value) {
     powerChartInstance.value.destroy();
     powerChartInstance.value = null;
@@ -329,31 +394,16 @@ const upsertPowerChart = () => {
     type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: "Power (kW)",
-          data,
-          borderWidth: 1.5,
-          pointRadius: 2,
-          tension: 0.2,
-        },
-      ],
+      datasets: [{ label: "Power", data, borderWidth: 1.5, pointRadius: 2, tension: 0.2 }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      scales: {
-        x: { type: "category" },
-        y: { beginAtZero: true },
-      },
+      scales: { x: { type: "category" }, y: { beginAtZero: true } },
       plugins: {
         legend: { display: false },
         zoom: {
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            mode: "x",
-          },
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
           pan: { enabled: true, mode: "x" },
         },
       },
@@ -369,7 +419,6 @@ const upsertSteelChart = () => {
     }
     return;
   }
-
   if (!steelChartCanvas.value) return;
 
   const { labels, data } = steelChartJsData.value;
@@ -378,7 +427,6 @@ const upsertSteelChart = () => {
 
   const existing = ChartJS.getChart(canvas);
   if (existing) existing.destroy();
-
   if (steelChartInstance.value) {
     steelChartInstance.value.destroy();
     steelChartInstance.value = null;
@@ -388,31 +436,16 @@ const upsertSteelChart = () => {
     type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: "Steel (kg)",
-          data,
-          borderWidth: 1.5,
-          pointRadius: 2,
-          tension: 0.2,
-        },
-      ],
+      datasets: [{ label: "Steel", data, borderWidth: 1.5, pointRadius: 2, tension: 0.2 }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      scales: {
-        x: { type: "category" },
-        y: { beginAtZero: true },
-      },
+      scales: { x: { type: "category" }, y: { beginAtZero: true } },
       plugins: {
         legend: { display: false },
         zoom: {
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            mode: "x",
-          },
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
           pan: { enabled: true, mode: "x" },
         },
       },
@@ -420,7 +453,7 @@ const upsertSteelChart = () => {
   });
 };
 
-/* ====== LOAD LẦN ĐẦU + RELOAD KHI ĐỔI STATE ====== */
+/* ====== lifecycle ====== */
 onMounted(() => {
   const now = new Date();
   timeHour.value = now.getHours();
@@ -429,14 +462,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (powerChartInstance.value) {
-    powerChartInstance.value.destroy();
-    powerChartInstance.value = null;
-  }
-  if (steelChartInstance.value) {
-    steelChartInstance.value.destroy();
-    steelChartInstance.value = null;
-  }
+  if (powerChartInstance.value) powerChartInstance.value.destroy();
+  if (steelChartInstance.value) steelChartInstance.value.destroy();
 });
 
 watch([selectedDate, timeHour, selectedReport, selectedBatchId, selectedShift], () => {
@@ -472,8 +499,14 @@ watch(
           {{ t("batchInProgress") }} :
           <span>{{ batchInProgress || "-" }}</span>
         </div>
+       <!-- Steel Ball Type -->
+        <div style="font-weight: 700">
+          {{ t("dailyReport.steelBallType") }}:
+          <span style="font-weight: 700;">
+            {{ steelBallType || "----" }}
+          </span>
+        </div>
       </div>
-
       <div class="dr-top-right">
         <!-- Report select -->
         <div class="dr-select-group">
@@ -520,7 +553,7 @@ watch(
     </header>
 
     <!-- SUMMARY CARDS -->
-    <section class="dr-summary">
+    <section class="dr-summary" style="grid-template-columns: 2fr 1.3fr 1.3fr 1.3fr">
       <!-- Steel Ball -->
       <div class="dr-summary-card">
         <div class="dr-summary-title">{{ t("dailyReport.steelBall") }}</div>
@@ -548,10 +581,19 @@ watch(
 
       <!-- Power -->
       <div class="dr-summary-card">
-        <div class="dr-summary-title">{{ t("power") }}</div>
+        <div class="dr-summary-title">{{ t("power") }} (kWh)</div>
         <div class="dr-summary-content center">
           <span class="big">{{ powerTotalDisplay }}</span>
-          <span class="unitt">kW</span>
+          <span class="unitt">kWh</span>
+        </div>
+      </div>
+
+      <!-- Carbon Emission -->
+      <div class="dr-summary-card">
+        <div class="dr-summary-title">Carbon Emission</div>
+        <div class="dr-summary-content center">
+          <span class="big">{{ carbonEmissionDisplay }}</span>
+          <span class="unitt">kgCO2</span>
         </div>
       </div>
 
@@ -559,6 +601,7 @@ watch(
       <div class="dr-summary-card">
         <div class="dr-summary-title">{{ t("dailyReport.time") }}</div>
         <div class="dr-summary-content time">
+          <!-- ✅ FIX: dùng 'hour' và 'minute' (không dùng "hour") -->
           <span class="big" @mousedown="(e) => onTimeMouseDown('hour', e)">{{ timeHour }}</span>
           <span class="unitt">h</span>
           <span class="big" @mousedown="(e) => onTimeMouseDown('minute', e)">
@@ -578,7 +621,7 @@ watch(
         <div class="dr-chart-card" :class="{ 'dr-chart-card--line': selectedReport === 'Batch Summary' }">
           <template v-if="selectedReport === 'Batch Summary'">
             <div class="dr-chart-title" :class="{ 'dr-chart-title--zh': isChinese }">
-              {{ t("power") }}
+              {{ t("power") }} (kWh)
             </div>
 
             <div class="line-chart-box power-line-box">
@@ -592,7 +635,7 @@ watch(
 
           <template v-else>
             <div class="dr-chart-title" :class="{ 'dr-chart-title--zh': isChinese }">
-              {{ t("power") }}
+              {{ t("power") }} (kWh)
             </div>
             <div class="dr-chart">
               <div class="dr-y-axis">
@@ -734,7 +777,6 @@ watch(
 }
 
 .dr-top-left {
-  display: flex;
   width: 40%;
   height: 100%;
   align-items: center;
@@ -919,7 +961,7 @@ watch(
 }
 
 .big {
-  font-size: 45px;
+  font-size: 30px;
   font-weight: 600;
 }
 
@@ -929,10 +971,9 @@ watch(
   padding-left: 10px;
 }
 .unitt {
-  font-size: 25px;
+  font-size: 23px;
   font-weight: 500;
-  padding-left: 10px;
-  padding-top: 15px;
+  padding: 8px 0px
 }
 
 /* BATCH PANEL */
@@ -953,13 +994,14 @@ watch(
 .dr-batch-content {
   display: flex;
   gap: 12px;
+  justify-content: space-around;
 }
 
 .dr-before-after {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -979,7 +1021,7 @@ watch(
 .dr-chart-title {
   position: absolute;
   top: 50%;
-  left: -31px;
+  left: -35px;
   transform: translateY(-50%) rotate(-90deg);
   transform-origin: center;
   font-size: 14px;
@@ -999,7 +1041,7 @@ watch(
 
 /* Điều chỉnh khi tiếng Trung */
 .dr-chart-title--zh {
-  left: -22px !important;
+  left: -28px !important;
 }
 .dr-chart-titlee--zh {
   left: -22px !important;
@@ -1208,7 +1250,7 @@ watch(
 
 .center {
   text-align: center;
-  padding: 20px 10px;
+  padding: 21px 10px;
 }
 .time {
   text-align: center;

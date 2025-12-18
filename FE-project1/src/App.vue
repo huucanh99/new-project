@@ -126,5 +126,6 @@ body,
   flex-direction: column;
   gap: 20px;
   background: white;
+  max-width: 1020px;
 }
 </style>

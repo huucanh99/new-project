@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted } from "vue";
 import upIcon from "@/assets/arrow_up.png";
 import downIcon from "@/assets/arrow_down.png";
 
@@ -8,18 +8,17 @@ const { t } = useI18n();
 
 const emit = defineEmits(["go-life"]);
 
-// 👇 ĐỔI LẠI CHO PHÙ HỢP MÔI TRƯỜNG CỦA ANH
 // const API_BASE = "http://localhost:4000";
 const API_BASE = "http://26.51.197.241:4000";
 
-/* ==== Steel ball type ==== */
-const steelBallTypes = [
-  { value: "Type A", labelKey: "generalSettings.typeA" },
-  { value: "Type B", labelKey: "generalSettings.typeB" },
-  { value: "Type C", labelKey: "generalSettings.typeC" },
-];
+/* ================= HELPERS ================= */
+const normalizeType = (s) => (s ?? "").trim().replace(/\s+/g, " ");
 
-const selectedSteelBallType = ref(steelBallTypes[0].value);
+/* ==== Steel ball type (TEXT) ==== */
+const selectedSteelBallType = ref("Type A");
+
+/* ==== Carbon coefficient (kgCO2/kWh) ==== */
+const carbonCoefficient = ref(null);
 
 /* ==== Alarm values ==== */
 const alarms = ref({
@@ -36,6 +35,7 @@ const alarms = ref({
 /* ==== UI state ==== */
 const loading = ref(false);
 const saving = ref(false);
+const savingType = ref(false);
 const errorMsg = ref("");
 
 /* ==== Validate (optional) ==== */
@@ -51,7 +51,6 @@ const isAlarmInvalid = computed(() => {
     a.powerUpper == null ||
     a.powerLower == null
   ) {
-    // Chưa nhập hết thì chưa check invalid
     return false;
   }
   return (
@@ -76,23 +75,22 @@ const resetAlarms = () => {
   };
 };
 
-/* ==== LOAD từ BE: GET /api/alarm-settings ==== */
+/* ================== API: Alarm settings ================== */
 const fetchAlarmSettings = async () => {
   loading.value = true;
   errorMsg.value = "";
   resetAlarms();
 
   try {
-    const type = selectedSteelBallType.value;
+    const type = normalizeType(selectedSteelBallType.value);
+    if (!type) return;
+
     const res = await fetch(
       `${API_BASE}/api/alarm-settings?steelBallType=${encodeURIComponent(type)}`
     );
 
     if (!res.ok) {
-      // nếu chưa có config thì coi như không lỗi, trả form trống cho user nhập
-      if (res.status === 404) {
-        return;
-      }
+      if (res.status === 404) return;
       const data = await res.json().catch(() => ({}));
       throw new Error(data.message || `Failed (status: ${res.status})`);
     }
@@ -100,7 +98,6 @@ const fetchAlarmSettings = async () => {
     const data = await res.json();
     const s = data.settings || {};
 
-    // Map từ response -> form
     alarms.value.steelWeightUpper = s.steel_ball_weight?.upper ?? null;
     alarms.value.steelWeightLower = s.steel_ball_weight?.lower ?? null;
 
@@ -120,7 +117,6 @@ const fetchAlarmSettings = async () => {
   }
 };
 
-/* ==== SAVE vào BE: POST /api/alarm-settings ==== */
 const saveAlarms = async () => {
   if (isAlarmInvalid.value) {
     alert(t("generalSettings.invalidRange"));
@@ -131,8 +127,14 @@ const saveAlarms = async () => {
   errorMsg.value = "";
 
   try {
+    const type = normalizeType(selectedSteelBallType.value);
+    if (!type) {
+      alert("Steel Ball Type is required");
+      return;
+    }
+
     const body = {
-      steelBallType: selectedSteelBallType.value,
+      steelBallType: type,
       settings: {
         steel_ball_weight: {
           upper: alarms.value.steelWeightUpper,
@@ -174,10 +176,83 @@ const saveAlarms = async () => {
   }
 };
 
-/* Nếu sau này anh muốn lưu riêng Steel Ball Type thì tách API riêng.
-   Tạm thời chỉ log, để nút vẫn dùng được UI. */
-const saveSteelType = () => {
-  console.log("Save steel ball type:", selectedSteelBallType.value);
+/* ================== API: Steel type settings (coefficient) ==================
+   Cần BE có:
+   - GET  /api/steel-type-settings?steelBallType=...
+   - POST /api/steel-type-settings  { steelBallType, carbonCoefficient, carbonUnit }
+*/
+const fetchSteelTypeSettings = async () => {
+  try {
+    const type = normalizeType(selectedSteelBallType.value);
+    if (!type) return;
+
+    const res = await fetch(
+      `${API_BASE}/api/steel-type-settings?steelBallType=${encodeURIComponent(type)}`
+    );
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        carbonCoefficient.value = null;
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || `Failed (status: ${res.status})`);
+    }
+
+    const data = await res.json();
+    carbonCoefficient.value = data?.carbonCoefficient ?? null;
+  } catch (err) {
+    console.error("fetchSteelTypeSettings error:", err);
+    errorMsg.value = err.message;
+  }
+};
+
+const saveSteelType = async () => {
+  savingType.value = true;
+  errorMsg.value = "";
+
+  try {
+    const type = normalizeType(selectedSteelBallType.value);
+    if (!type) {
+      alert("Steel Ball Type is required");
+      return;
+    }
+
+    const body = {
+      steelBallType: type,
+      carbonCoefficient: carbonCoefficient.value,
+      carbonUnit: "kgCO2/kWh",
+    };
+
+    const res = await fetch(`${API_BASE}/api/steel-type-settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || `Failed (status: ${res.status})`);
+    }
+
+    alert(t("generalSettings.saveSuccess") || "Saved successfully");
+  } catch (err) {
+    console.error("saveSteelType error:", err);
+    errorMsg.value = err.message;
+    alert(t("generalSettings.saveFailed") || "Save failed");
+  } finally {
+    savingType.value = false;
+  }
+};
+
+/* ===== Khi user đổi/gõ type: load lại alarms + coefficient (tránh spam API) ===== */
+const handleTypeBlur = async () => {
+  const type = normalizeType(selectedSteelBallType.value);
+  selectedSteelBallType.value = type;
+  if (!type) return;
+
+  await fetchAlarmSettings();
+  await fetchSteelTypeSettings();
 };
 
 const goToLifeWarning = () => {
@@ -185,17 +260,10 @@ const goToLifeWarning = () => {
 };
 
 /* ==== LIFECYCLE ==== */
-onMounted(() => {
-  fetchAlarmSettings();
+onMounted(async () => {
+  await fetchAlarmSettings();
+  await fetchSteelTypeSettings();
 });
-
-// Khi đổi Steel Ball Type → tự load lại config từ BE
-watch(
-  () => selectedSteelBallType.value,
-  () => {
-    fetchAlarmSettings();
-  }
-);
 </script>
 
 <template>
@@ -211,24 +279,43 @@ watch(
         <h2 class="sp-title">
           {{ t("generalSettings.steelTypeTitle") }}
         </h2>
-        <button class="sp-btn" @click="saveSteelType">
-          {{ t("generalSettings.saveButton") }}
+        <button class="sp-btn" @click="saveSteelType" :disabled="savingType">
+          {{ savingType ? (t("generalSettings.saving") || "Saving...") : t("generalSettings.saveButton") }}
         </button>
       </div>
 
-      <div class="sp-card-body sp-type-row">
-        <div class="sp-type-label">
-          {{ t("generalSettings.steelBallType") }}
+      <!-- ✅ 2 cột: trái = Steel Ball Type (text), phải = Carbon coefficient -->
+      <div class="sp-card-body sp-type-grid">
+        <!-- Left -->
+        <div class="sp-type-col">
+          <div class="sp-type-label">
+            {{ t("generalSettings.steelBallType") }}
+          </div>
+          <input
+            v-model="selectedSteelBallType"
+            class="sp-input sp-input--type"
+            type="text"
+            placeholder="Enter steel ball type..."
+            @blur="handleTypeBlur"
+          />
         </div>
-        <select v-model="selectedSteelBallType" class="sp-select">
-          <option
-            v-for="opt in steelBallTypes"
-            :key="opt.value"
-            :value="opt.value"
-          >
-            {{ t(opt.labelKey) }}
-          </option>
-        </select>
+
+        <!-- Right -->
+        <div class="sp-type-col">
+          <div class="sp-type-label">
+            Carbon Emission Coefficient
+          </div>
+          <div class="sp-coeff-row">
+            <input
+              v-model.number="carbonCoefficient"
+              class="sp-input sp-input--coeff"
+              type="number"
+              step="0.0001"
+              placeholder="e.g., 0.52"
+            />
+            <span class="sp-unit sp-unit--wide">kgCO2/kWh</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -261,31 +348,21 @@ watch(
             </div>
 
             <div class="sp-row-limits">
-              <!-- Upper -->
               <div class="sp-limit">
                 <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
                 <span class="sp-limit-text">
                   {{ t("generalSettings.upperLimit") }}
                 </span>
-                <input
-                  v-model.number="alarms.steelWeightUpper"
-                  class="sp-input"
-                  type="text"
-                />
+                <input v-model.number="alarms.steelWeightUpper" class="sp-input" type="text" />
                 <span class="sp-unit">KG</span>
               </div>
 
-              <!-- Lower -->
               <div class="sp-limit">
                 <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
                 <span class="sp-limit-text">
                   {{ t("generalSettings.lowerLimit") }}
                 </span>
-                <input
-                  v-model.number="alarms.steelWeightLower"
-                  class="sp-input"
-                  type="text"
-                />
+                <input v-model.number="alarms.steelWeightLower" class="sp-input" type="text" />
                 <span class="sp-unit">KG</span>
               </div>
             </div>
@@ -300,27 +377,15 @@ watch(
             <div class="sp-row-limits">
               <div class="sp-limit">
                 <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
-                <span class="sp-limit-text">
-                  {{ t("generalSettings.upperLimit") }}
-                </span>
-                <input
-                  v-model.number="alarms.currentUpper"
-                  class="sp-input"
-                  type="text"
-                />
+                <span class="sp-limit-text">{{ t("generalSettings.upperLimit") }}</span>
+                <input v-model.number="alarms.currentUpper" class="sp-input" type="text" />
                 <span class="sp-unit">A</span>
               </div>
 
               <div class="sp-limit">
                 <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
-                <span class="sp-limit-text">
-                  {{ t("generalSettings.lowerLimit") }}
-                </span>
-                <input
-                  v-model.number="alarms.currentLower"
-                  class="sp-input"
-                  type="text"
-                />
+                <span class="sp-limit-text">{{ t("generalSettings.lowerLimit") }}</span>
+                <input v-model.number="alarms.currentLower" class="sp-input" type="text" />
                 <span class="sp-unit">A</span>
               </div>
             </div>
@@ -335,27 +400,15 @@ watch(
             <div class="sp-row-limits">
               <div class="sp-limit">
                 <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
-                <span class="sp-limit-text">
-                  {{ t("generalSettings.upperLimit") }}
-                </span>
-                <input
-                  v-model.number="alarms.voltageUpper"
-                  class="sp-input"
-                  type="text"
-                />
+                <span class="sp-limit-text">{{ t("generalSettings.upperLimit") }}</span>
+                <input v-model.number="alarms.voltageUpper" class="sp-input" type="text" />
                 <span class="sp-unit">V</span>
               </div>
 
               <div class="sp-limit">
                 <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
-                <span class="sp-limit-text">
-                  {{ t("generalSettings.lowerLimit") }}
-                </span>
-                <input
-                  v-model.number="alarms.voltageLower"
-                  class="sp-input"
-                  type="text"
-                />
+                <span class="sp-limit-text">{{ t("generalSettings.lowerLimit") }}</span>
+                <input v-model.number="alarms.voltageLower" class="sp-input" type="text" />
                 <span class="sp-unit">V</span>
               </div>
             </div>
@@ -370,27 +423,15 @@ watch(
             <div class="sp-row-limits">
               <div class="sp-limit">
                 <img :src="upIcon" class="sp-arrow" alt="Upper Limit" />
-                <span class="sp-limit-text">
-                  {{ t("generalSettings.upperLimit") }}
-                </span>
-                <input
-                  v-model.number="alarms.powerUpper"
-                  class="sp-input"
-                  type="text"
-                />
+                <span class="sp-limit-text">{{ t("generalSettings.upperLimit") }}</span>
+                <input v-model.number="alarms.powerUpper" class="sp-input" type="text" />
                 <span class="sp-unit">kW</span>
               </div>
 
               <div class="sp-limit">
                 <img :src="downIcon" class="sp-arrow" alt="Lower Limit" />
-                <span class="sp-limit-text">
-                  {{ t("generalSettings.lowerLimit") }}
-                </span>
-                <input
-                  v-model.number="alarms.powerLower"
-                  class="sp-input"
-                  type="text"
-                />
+                <span class="sp-limit-text">{{ t("generalSettings.lowerLimit") }}</span>
+                <input v-model.number="alarms.powerLower" class="sp-input" type="text" />
                 <span class="sp-unit">kW</span>
               </div>
             </div>
@@ -399,7 +440,6 @@ watch(
       </div>
     </section>
 
-    <!-- Nút đi qua Component Life Warning -->
     <div class="sp-switch">
       <button class="sp-btn" @click="goToLifeWarning">
         {{ t("generalSettings.goLifeWarning") }}
@@ -413,7 +453,6 @@ watch(
   margin-top: -20px;
 }
 
-/* Card chung */
 .sp-card {
   background: rgb(214, 220, 229);
   border-radius: 12px;
@@ -456,11 +495,18 @@ watch(
   padding: 12px 16px;
 }
 
-/* Steel Ball Type row */
-.sp-type-row {
+/* ✅ 2-column grid for type + coefficient */
+.sp-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: end;
+}
+
+.sp-type-col {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .sp-type-label {
@@ -468,24 +514,16 @@ watch(
   font-weight: 600;
 }
 
-.sp-select {
-  min-width: 260px;
-  padding: 10px 10px;
-  font-size: 16px;
-  border: 1px solid white;
-  background: #fff;
-  font-weight: 600;
+.sp-coeff-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-/* Alarm layout */
 .sp-alarm-grid {
   display: flex;
   flex-direction: column;
   gap: 18px;
-}
-
-.sp-row {
-  align-items: flex-start;
 }
 
 .sp-row-title {
@@ -496,7 +534,6 @@ watch(
 }
 
 .sp-row-limits {
-  flex: 1;
   display: flex;
   justify-content: flex-start;
   gap: 40px;
@@ -529,10 +566,22 @@ watch(
   font-weight: 600;
 }
 
+.sp-input--type {
+  width: 260px;
+}
+
+.sp-input--coeff {
+  width: 200px;
+}
+
 .sp-unit {
   font-weight: 600;
   width: 40px;
   display: inline-block;
+}
+
+.sp-unit--wide {
+  width: 90px;
 }
 
 .sp-card-header--centered {

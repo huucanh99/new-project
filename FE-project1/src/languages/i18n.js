@@ -22,7 +22,7 @@ export const translations = {
     current: "Current (A)",
     dustCollector: "Dust Collector",
 
-    power: "Power (kW)",
+    power: "Power",
 
     alarmHistory: "Alarm History",
     alarmNo: "No.",
@@ -49,7 +49,7 @@ export const translations = {
       dailyTotal: "Daily Total Report",
       shiftReport: "Shift Report",
       batchSummary: "Batch Summary",
-
+      steelBallType: "Steel Ball Type",
       steelBall: "Steel Ball",
       steelBallWithUnit: "Steel Ball (KG)",
       before: "Before",
@@ -74,7 +74,7 @@ export const translations = {
     },
 
     generalSettings: {
-      steelTypeTitle: "Steel Ball Type Settings",
+      steelTypeTitle: "Parameter Settings",
       alarmTitle: "Alarm Settings",
       saveButton: "Save Settings",
       steelBallType: "Steel Ball Type",
@@ -144,7 +144,7 @@ export const translations = {
     current: "電流 (A)",
     dustCollector: "集塵器",
 
-    power: "功率 (kW)",
+    power: "功率",
 
     alarmHistory: "警報紀錄",
     alarmNo: "編號",
@@ -171,7 +171,7 @@ export const translations = {
       dailyTotal: "每日總報表",
       shiftReport: "班別報表",
       batchSummary: "批次報表",
-
+      steelBallType: "鋼球種類",
       steelBall: "鋼珠",
       steelBallWithUnit: "鋼珠 (KG)",
       before: "前庫存",
@@ -196,7 +196,7 @@ export const translations = {
     },
 
     generalSettings: {
-      steelTypeTitle: "鋼珠種類設定",
+      steelTypeTitle: "參數設定",
       alarmTitle: "警報設定",
       saveButton: "儲存設定",
       steelBallType: "鋼珠種類",

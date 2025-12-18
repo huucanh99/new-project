@@ -13,6 +13,7 @@ const API_BASE = "http://26.51.197.241:4000";
 /* ====== STATE DASHBOARD ====== */
 const loading = ref(false);
 const errorMsg = ref("");
+const steelBallType = ref("");
 
 // status gốc từ BE (operating / standby / offline...)
 const rawMachineStatus = ref("offline");
@@ -100,7 +101,7 @@ const fetchDashboard = async () => {
     }
 
     const data = await res.json();
-
+    steelBallType.value = data.steelBallType || data.steel_ball_type || "";
     batchId.value = data.batchId || "";
     rawMachineStatus.value = data.machineStatus || "offline";
 
@@ -191,6 +192,11 @@ onMounted(() => {
     </p>
 
     <header class="top-bar">
+      <div class="top-bar-left">
+        <span >
+          {{ t("dailyReport.steelBallType") }}: <strong>{{ steelBallType || "----" }}</strong>
+        </span>
+      </div>
       <div class="top-bar-right">
         <button
           class="alert-button"
@@ -317,7 +323,7 @@ onMounted(() => {
       </div>
 
       <div class="metric-group">
-        <div class="metric-title title-of-all">{{ t("power") }}</div>
+        <div class="metric-title title-of-all">{{ t("power") }} (kW)</div>
         <div class="metric-row-4">
           <div class="metric-card">
             <div class="metric-label blue">{{ t("powerSupply") }}</div>
@@ -441,6 +447,9 @@ onMounted(() => {
 
 .top-bar {
   margin-top: -25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .top-bar-right {
