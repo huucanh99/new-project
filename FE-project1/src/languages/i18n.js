@@ -1,11 +1,31 @@
 // src/languages/i18n.js
-import { ref } from "vue";
+import { ref, watch } from "vue";
 
-export const currentLang = ref("en"); // "en" | "zh"
+const LANG_KEY = "lang";
+const savedLang = localStorage.getItem(LANG_KEY);
+
+// ✅ chỉ cho phép "en" | "zh"
+const normalizedLang = savedLang === "zh" || savedLang === "en" ? savedLang : "en";
+
+export const currentLang = ref(normalizedLang);
+
+watch(currentLang, (val) => {
+  localStorage.setItem(LANG_KEY, val);
+});
+
+
 
 export const translations = {
   en: {
     // ===== COMMON =====
+    common: {
+      noPermission: "You don't have permission to access this section.",
+      contactManager: "Please contact your manager to access this feature.",
+    },
+    auth: {
+      invalidLogin: "Invalid username or password.",
+      loginRequired: "Please login to continue.",
+    },
     alert: "Alert",
     batchInProgress: "Batch in Progress",
 
@@ -128,6 +148,14 @@ export const translations = {
 
   zh: {
     // ===== COMMON =====
+    common: {
+      noPermission: "您沒有權限存取此功能。",
+      contactManager: "請聯絡您的主管以取得此功能的存取權限。",
+    },
+    auth: {
+      invalidLogin: "帳號或密碼錯誤。",
+      loginRequired: "請先登入。",
+    },
     alert: "警報",
     batchInProgress: "正在生產的批次",
 

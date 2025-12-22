@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useI18n } from "@/languages/i18n";
+import { apiFetch } from "@/utils/apiFetch";
 
 const { t } = useI18n();
 const emit = defineEmits(["go-general"]);
@@ -123,7 +124,7 @@ const startTimerForItem = (item) => {
 
   timers[item.id] = setInterval(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/component-life/tick`, {
+      const res = await apiFetch(`/api/component-life/tick`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -167,7 +168,7 @@ const fetchComponentLife = async () => {
   errorMsg.value = "";
 
   try {
-    const res = await fetch(`${API_BASE}/api/component-life`, {
+    const res = await apiFetch(`/api/component-life`, {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -229,7 +230,7 @@ const saveComponent = async (item) => {
       ],
     };
 
-    const res = await fetch(`${API_BASE}/api/component-life`, {
+    const res = await apiFetch(`/api/component-life`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -272,7 +273,7 @@ const resetComponent = async (item) => {
   errorMsg.value = "";
 
   try {
-    const res = await fetch(`${API_BASE}/api/component-life/reset`, {
+    const res = await apiFetch(`/api/component-life/reset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: item.id }),

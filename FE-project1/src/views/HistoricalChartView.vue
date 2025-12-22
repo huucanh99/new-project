@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
 import { useI18n } from "@/languages/i18n";
+import { apiFetch } from "@/utils/apiFetch";
 
 /* ===== Chart.js + Zoom plugin (GIỐNG Batch Summary) ===== */
 import {
@@ -493,7 +494,7 @@ const fetchHistorical = async () => {
       to,
     });
 
-    const res = await fetch(`${API_BASE}/api/historical-report?${params.toString()}`);
+    const res = await apiFetch(`/api/historical-report?${params.toString()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();

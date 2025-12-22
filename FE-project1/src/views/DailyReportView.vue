@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
 import { useI18n } from "@/languages/i18n";
+import { apiFetch } from "@/utils/apiFetch";
 
 /* ====== Chart.js + Zoom plugin ====== */
 import {
@@ -179,7 +180,7 @@ const fetchCarbonSetting = async () => {
     qs.set("steel_type", steelBallType.value);
     qs.set("steelType", steelBallType.value);
 
-    const res = await fetch(`${API_BASE}/api/steel-type-settings?${qs.toString()}`);
+    const res = await apiFetch(`/api/steel-type-settings?${qs.toString()}`);
 
     if (!res.ok) {
       carbonCoefficient.value = null;
@@ -235,7 +236,7 @@ const loadDailyReport = async () => {
       params.append("shift", String(selectedShift.value));
     }
 
-    const res = await fetch(`${API_BASE}/api/daily-report?${params.toString()}`);
+    const res = await apiFetch(`/api/daily-report?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to load daily report (status ${res.status})`);
 
     const data = await res.json();
@@ -287,7 +288,7 @@ const fetchAlarms = async () => {
   alarmLoading.value = true;
   alarmError.value = "";
   try {
-    const res = await fetch(`${API_BASE}/api/alarms`);
+    const res = await apiFetch("/api/alarms");
     if (!res.ok) throw new Error(`Failed to load alarms (status ${res.status})`);
     alarmRows.value = await res.json();
   } catch (e) {

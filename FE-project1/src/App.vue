@@ -5,7 +5,7 @@ const route = useRoute();
 const router = useRouter();
 
 const menuItems = [
-  { label: "Dashboard", path: "/" },
+  { label: "Dashboard", path: "/dashboard" },
   { label: "Daily Report", path: "/daily-report" },
   { label: "Historical Chart", path: "/historical-chart" },
   { label: "Settings", path: "/settings" },

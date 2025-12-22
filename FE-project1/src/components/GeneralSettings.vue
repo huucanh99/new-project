@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from "vue";
 import upIcon from "@/assets/arrow_up.png";
 import downIcon from "@/assets/arrow_down.png";
+import { apiFetch } from "@/utils/apiFetch";
 
 import { useI18n } from "@/languages/i18n";
 const { t } = useI18n();
@@ -85,8 +86,8 @@ const fetchAlarmSettings = async () => {
     const type = normalizeType(selectedSteelBallType.value);
     if (!type) return;
 
-    const res = await fetch(
-      `${API_BASE}/api/alarm-settings?steelBallType=${encodeURIComponent(type)}`
+    const res = await apiFetch(
+      `/api/alarm-settings?steelBallType=${encodeURIComponent(type)}`
     );
 
     if (!res.ok) {
@@ -155,7 +156,7 @@ const saveAlarms = async () => {
       },
     };
 
-    const res = await fetch(`${API_BASE}/api/alarm-settings`, {
+    const res = await apiFetch(`/api/alarm-settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -186,8 +187,8 @@ const fetchSteelTypeSettings = async () => {
     const type = normalizeType(selectedSteelBallType.value);
     if (!type) return;
 
-    const res = await fetch(
-      `${API_BASE}/api/steel-type-settings?steelBallType=${encodeURIComponent(type)}`
+    const res = await apiFetch(
+      `/api/steel-type-settings?steelBallType=${encodeURIComponent(type)}`
     );
 
     if (!res.ok) {
@@ -224,7 +225,7 @@ const saveSteelType = async () => {
       carbonUnit: "kgCO2/kWh",
     };
 
-    const res = await fetch(`${API_BASE}/api/steel-type-settings`, {
+    const res = await apiFetch(`/api/steel-type-settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

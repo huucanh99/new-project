@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import TimeClock from "@/components/TimeClock.vue";
 import LanguageSwitch from "@/components/LanguageSwitch.vue";
 import { useI18n } from "@/languages/i18n";
+import { apiFetch } from "@/utils/apiFetch";
 
 const { t, ts } = useI18n();
 
@@ -91,7 +92,7 @@ const fetchDashboard = async () => {
   errorMsg.value = "";
 
   try {
-    const res = await fetch(`${API_BASE}/api/dashboard`, {
+    const res = await apiFetch(`/api/dashboard`, {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -133,7 +134,7 @@ const fetchAlarms = async () => {
   alarmError.value = "";
 
   try {
-    const res = await fetch(`${API_BASE}/api/alarms`, {
+    const res = await apiFetch(`/api/alarms`, {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -154,7 +155,7 @@ const fetchAlarms = async () => {
 /* ====== ACK ONE ALARM (tick ✓) ====== */
 const ackAlarm = async (id) => {
   try {
-    const res = await fetch(`${API_BASE}/api/alarms/ack/${id}`, {
+    const res = await apiFetch(`/api/alarms/ack/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
