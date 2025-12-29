@@ -19,8 +19,16 @@ export const translations = {
   en: {
     // ===== COMMON =====
     common: {
+      logout: "Logout",
       noPermission: "You don't have permission to access this section.",
       contactManager: "Please contact your manager to access this feature.",
+      on: "ON", off: "OFF",
+    },
+    menu: {
+    dashboard: "Dashboard",
+    dailyReport: "Daily Report",
+    historicalChart: "Historical Chart",
+    settings: "Settings",
     },
     auth: {
       invalidLogin: "Invalid username or password.",
@@ -112,6 +120,7 @@ export const translations = {
     },
 
     lifeWarning: {
+      bypass: "Bypass Warning" ,
       title: "Component Life Warning Setting",
       backButton: "← Back to Alarm Settings",
       accumulatedHours: "Accumulated Hours",
@@ -149,8 +158,17 @@ export const translations = {
   zh: {
     // ===== COMMON =====
     common: {
+      logout: "登出",
       noPermission: "您沒有權限存取此功能。",
       contactManager: "請聯絡您的主管以取得此功能的存取權限。",
+      on: "開",
+      off: "關",
+    },
+    menu: {
+    dashboard: "儀表板",
+    dailyReport: "每日報表",
+    historicalChart: "歷史圖表",
+    settings: "設定",
     },
     auth: {
       invalidLogin: "帳號或密碼錯誤。",
@@ -242,6 +260,7 @@ export const translations = {
     },
 
     lifeWarning: {
+      bypass: "關閉警報提示",
       title: "元件壽命警報設定",
       backButton: "← 返回警報設定",
       accumulatedHours: "累積運轉時間",

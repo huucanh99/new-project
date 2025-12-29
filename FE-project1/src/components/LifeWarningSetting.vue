@@ -1,19 +1,39 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "@/languages/i18n";
 import { apiFetch } from "@/utils/apiFetch";
 
 const { t } = useI18n();
 const emit = defineEmits(["go-general"]);
 
-const API_BASE = "http://26.51.197.241:4000";
-// const API_BASE = "http://localhost:4000";
-
-/* ===== DEMO TIMER CONFIG ===== */
-// 1 giờ = 3600 giây
+/* ===== CONFIG ===== */
 const HOUR_SECONDS = 3600;
-// DEMO: 1 phút thật = 1 giờ ảo (muốn nhanh hơn đổi thành 5000 ms)
-const TEST_INTERVAL_MS = 60000;
+const POLL_MS = 5000; // chỉ GET để refresh UI, không tick
+
+/* ===== ✅ BYPASS CONFIG (localStorage) ===== */
+const BYPASS_KEY = "life_warning_bypass";
+const bypassEnabled = ref(localStorage.getItem(BYPASS_KEY) === "1");
+
+watch(bypassEnabled, (val) => {
+  localStorage.setItem(BYPASS_KEY, val ? "1" : "0");
+});
+
+/* ✅ để tránh alert bắn lặp: lưu các component đã alert rồi */
+const ALERTED_KEY = "life_warning_alerted_ids";
+const alertedIds = ref(new Set());
+
+function loadAlertedIds() {
+  try {
+    const raw = localStorage.getItem(ALERTED_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    alertedIds.value = new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    alertedIds.value = new Set();
+  }
+}
+function saveAlertedIds() {
+  localStorage.setItem(ALERTED_KEY, JSON.stringify([...alertedIds.value]));
+}
 
 /* ===== STATE ===== */
 const loading = ref(false);
@@ -21,150 +41,34 @@ const errorMsg = ref("");
 const savingId = ref(null);
 const resettingId = ref(null);
 
-// Lưu interval của từng component theo id FE (impeller1, filter,...)
-const timers = {};
+let pollTimer = null;
 
 /* ==== Component Life Warning ==== */
 const componentItems = ref([
-  {
-    id: "impeller1",
-    nameKey: "lifeWarning.impeller1",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "impeller2",
-    nameKey: "lifeWarning.impeller2",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "blade1",
-    nameKey: "lifeWarning.blade1",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "blade2",
-    nameKey: "lifeWarning.blade2",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "claw1",
-    nameKey: "lifeWarning.claw1",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "claw2",
-    nameKey: "lifeWarning.claw2",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "clawTube1",
-    nameKey: "lifeWarning.clawTube1",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "clawTube2",
-    nameKey: "lifeWarning.clawTube2",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
-  {
-    id: "filter",
-    nameKey: "lifeWarning.filter",
-    warningHours: null,
-    elapsedSeconds: 0,
-    running: false,
-    alarmed: false,
-  },
+  { id: "impeller1", nameKey: "lifeWarning.impeller1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "impeller2", nameKey: "lifeWarning.impeller2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "blade1", nameKey: "lifeWarning.blade1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "blade2", nameKey: "lifeWarning.blade2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "claw1", nameKey: "lifeWarning.claw1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "claw2", nameKey: "lifeWarning.claw2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "clawTube1", nameKey: "lifeWarning.clawTube1", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "clawTube2", nameKey: "lifeWarning.clawTube2", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
+  { id: "filter", nameKey: "lifeWarning.filter", warningHours: null, elapsedSeconds: 0, running: false, alarmed: false },
 ]);
 
 /* ===== Helpers ===== */
 const getHours = (seconds) => seconds / HOUR_SECONDS;
 const formatHours = (seconds) => getHours(seconds).toFixed(2);
 
-const clearTimerForItem = (itemId) => {
-  if (timers[itemId]) {
-    clearInterval(timers[itemId]);
-    delete timers[itemId];
-  }
-};
-
-/* ===== START TIMER CHO 1 COMPONENT (demo + sync BE) ===== */
-// Mỗi TEST_INTERVAL_MS:
-//   - Gửi POST /api/component-life/tick { id, deltaHours: 1 }
-//   - BE tăng accumulated_hours, nếu vừa vượt warning_hours thì ghi alarm
-//   - FE đồng bộ lại accumulated_hours và hiển thị alert nếu triggered
-const startTimerForItem = (item) => {
-  // clear timer cũ nếu có
-  clearTimerForItem(item.id);
-
-  item.running = true;
-
-  timers[item.id] = setInterval(async () => {
-    try {
-      const res = await apiFetch(`/api/component-life/tick`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: item.id,   // impeller1, filter,...
-          deltaHours: 1, // mỗi tick tăng 1 giờ ảo
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Tick failed (status: ${res.status})`);
-      }
-
-      const data = await res.json();
-
-      // Đồng bộ lại accumulated_hours từ DB
-      const accHours = Number(data.accumulated_hours) || 0;
-      item.elapsedSeconds = accHours * HOUR_SECONDS;
-
-      // Nếu BE báo lần đầu vượt ngưỡng → bật alert
-      if (data.triggered && !item.alarmed) {
-        item.alarmed = true;
-
-        alert(
-          t("lifeWarning.lifeWarningTriggered", {
-            name: t(item.nameKey),
-            hours: accHours.toFixed(2),
-          })
-        );
-      }
-    } catch (e) {
-      console.error("Error ticking component life:", e);
-      clearTimerForItem(item.id);
-      item.running = false;
-    }
-  }, TEST_INTERVAL_MS);
-};
+function calcAlarmed(accHours, warnHours) {
+  const a = Number(accHours) || 0;
+  const w = Number(warnHours) || 0;
+  return w > 0 && a >= w;
+}
 
 /* ===== FETCH DỮ LIỆU TỪ BE ===== */
-const fetchComponentLife = async () => {
-  loading.value = true;
+const fetchComponentLife = async (opts = { silent: false }) => {
+  if (!opts.silent) loading.value = true;
   errorMsg.value = "";
 
   try {
@@ -172,9 +76,7 @@ const fetchComponentLife = async () => {
       headers: { "Content-Type": "application/json" },
     });
 
-    if (!res.ok) {
-      throw new Error(`Failed (status: ${res.status})`);
-    }
+    if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
 
     const data = await res.json();
 
@@ -182,27 +84,57 @@ const fetchComponentLife = async () => {
       const item = componentItems.value.find((c) => c.id === row.id);
       if (!item) return;
 
-      item.warningHours =
-        row.warning_hours != null ? Number(row.warning_hours) : null;
+      const warn = row.warning_hours != null ? Number(row.warning_hours) : null;
+      const acc = row.accumulated_hours != null ? Number(row.accumulated_hours) : 0;
 
-      const accHours =
-        row.accumulated_hours != null ? Number(row.accumulated_hours) : 0;
-      item.elapsedSeconds = accHours * HOUR_SECONDS;
+      item.warningHours = warn;
+      item.elapsedSeconds = acc * HOUR_SECONDS;
 
-      item.running = accHours > 0;
-      item.alarmed = false;
+      // running chỉ để UI
+      item.running = acc > 0;
 
-      // Nếu đã có warningHours thì cho nó chạy timer luôn (demo)
-      if (item.warningHours && item.warningHours > 0) {
-        startTimerForItem(item);
+      item.alarmed = calcAlarmed(acc, warn);
+
+      // ✅ nếu đã reset về 0 thì bỏ khỏi alertedIds để lần sau cảnh báo lại
+      if ((Number(acc) || 0) === 0 && alertedIds.value.has(item.id)) {
+        alertedIds.value.delete(item.id);
+        saveAlertedIds();
+      }
+
+      // ✅ nếu alarmed mà chưa từng alert, bắn alert 1 lần (trừ bypass)
+      if (item.alarmed && !bypassEnabled.value && !alertedIds.value.has(item.id)) {
+        alertedIds.value.add(item.id);
+        saveAlertedIds();
+
+        alert(
+          t("lifeWarning.lifeWarningTriggered", {
+            name: t(item.nameKey),
+            hours: acc.toFixed(2),
+          })
+        );
       }
     });
   } catch (err) {
     errorMsg.value = err.message || "Error fetching component life data";
   } finally {
-    loading.value = false;
+    if (!opts.silent) loading.value = false;
   }
 };
+
+/* ===== POLL chỉ để UI cập nhật ===== */
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(() => {
+    // silent để không hiện loading nhấp nháy
+    fetchComponentLife({ silent: true });
+  }, POLL_MS);
+}
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
 
 /* ===== SAVE 1 COMPONENT (WARNING HOURS) ===== */
 const saveComponent = async (item) => {
@@ -222,12 +154,7 @@ const saveComponent = async (item) => {
 
   try {
     const body = {
-      items: [
-        {
-          id: item.id,
-          warning_hours: val,
-        },
-      ],
+      items: [{ id: item.id, warning_hours: val }],
     };
 
     const res = await apiFetch(`/api/component-life`, {
@@ -236,21 +163,15 @@ const saveComponent = async (item) => {
       body: JSON.stringify(body),
     });
 
-    if (!res.ok) {
-      throw new Error(`Failed (status: ${res.status})`);
-    }
+    if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
 
-    item.running = true;
-    item.alarmed = false;
+    // ✅ user đổi ngưỡng -> cho phép alert lại (tránh case giảm warn xuống thấp mà không alert)
+    alertedIds.value.delete(item.id);
+    saveAlertedIds();
 
-    // bắt đầu đếm giờ demo (và sync với DB)
-    startTimerForItem(item);
+    alert(t("lifeWarning.savedOne", { name: t(item.nameKey) }));
 
-    alert(
-      t("lifeWarning.savedOne", {
-        name: t(item.nameKey),
-      })
-    );
+    await fetchComponentLife({ silent: true });
   } catch (err) {
     errorMsg.value = err.message || "Error saving warning hours";
   } finally {
@@ -260,14 +181,11 @@ const saveComponent = async (item) => {
 
 /* ===== RESET COMPONENT ===== */
 const resetComponent = async (item) => {
-  if (
-    !confirm(
-      t("lifeWarning.resetConfirm") ||
-        `Reset ${t(item.nameKey)} accumulated hours to 0?`
-    )
-  ) {
-    return;
-  }
+  const ok = confirm(
+    t("lifeWarning.resetConfirm") ||
+      `Reset ${t(item.nameKey)} accumulated hours to 0?`
+  );
+  if (!ok) return;
 
   resettingId.value = item.id;
   errorMsg.value = "";
@@ -279,21 +197,15 @@ const resetComponent = async (item) => {
       body: JSON.stringify({ id: item.id }),
     });
 
-    if (!res.ok) {
-      throw new Error(`Failed (status: ${res.status})`);
-    }
+    if (!res.ok) throw new Error(`Failed (status: ${res.status})`);
 
-    item.elapsedSeconds = 0;
-    item.alarmed = false;
-    item.running = true;
+    // ✅ reset thì cho phép alert lại về sau
+    alertedIds.value.delete(item.id);
+    saveAlertedIds();
 
-    // reset xong đếm lại từ 0 (demo + sync)
-    startTimerForItem(item);
+    alert(t("lifeWarning.resetDone") || `${t(item.nameKey)} reset done`);
 
-    alert(
-      t("lifeWarning.resetDone") ||
-        `${t(item.nameKey)} has been reset to 0 hours`
-    );
+    await fetchComponentLife({ silent: true });
   } catch (err) {
     errorMsg.value = err.message || "Error resetting component";
   } finally {
@@ -301,29 +213,45 @@ const resetComponent = async (item) => {
   }
 };
 
-const backToGeneral = () => {
-  emit("go-general");
-};
+const backToGeneral = () => emit("go-general");
 
-onMounted(() => {
-  fetchComponentLife();
+onMounted(async () => {
+  loadAlertedIds();
+  await fetchComponentLife();
+  startPolling();
 });
 
 onBeforeUnmount(() => {
-  Object.keys(timers).forEach((id) => clearTimerForItem(id));
+  stopPolling();
 });
 </script>
 
 <template>
   <section class="clws">
     <div class="clws-header">
-      <button class="clws-back-btn" @click="backToGeneral">
+      <button class="clws-back-btn" @click="backToGeneral" type="button">
         {{ t("lifeWarning.backButton") }}
       </button>
+
       <h2 class="clws-title">
         {{ t("lifeWarning.title") }}
       </h2>
-      <div class="clws-header-spacer"></div>
+
+      <!-- ✅ BYPASS TOGGLE (góc phải) -->
+      <div class="clws-toggle">
+        <span class="toggle-label">
+          {{ t("lifeWarning.bypass") || "Bypass" }}
+        </span>
+
+        <label class="switch" title="Bypass warnings">
+          <input type="checkbox" v-model="bypassEnabled" />
+          <span class="slider"></span>
+        </label>
+
+        <span class="toggle-state">
+          {{ bypassEnabled ? (t("common.on") || "ON") : (t("common.off") || "OFF") }}
+        </span>
+      </div>
     </div>
 
     <p v-if="errorMsg" style="color: red; margin-bottom: 8px">
@@ -339,7 +267,7 @@ onBeforeUnmount(() => {
         v-for="item in componentItems"
         :key="item.id"
         class="clws-card"
-        :class="{ 'clws-card--alarmed': item.alarmed }"
+        :class="{ 'clws-card--alarmed': item.alarmed && !bypassEnabled }"
       >
         <div class="clws-left">
           <div class="clws-name">
@@ -348,9 +276,7 @@ onBeforeUnmount(() => {
 
           <div class="clws-row">
             <span>{{ t("lifeWarning.accumulatedHours") }}</span>
-            <span class="clws-acc">
-              {{ formatHours(item.elapsedSeconds) }}
-            </span>
+            <span class="clws-acc">{{ formatHours(item.elapsedSeconds) }}</span>
             <span>{{ t("lifeWarning.unitHourShort") }}</span>
           </div>
 
@@ -373,6 +299,7 @@ onBeforeUnmount(() => {
             class="clws-btn clws-btn-save"
             :disabled="savingId === item.id"
             @click="saveComponent(item)"
+            type="button"
           >
             {{
               savingId === item.id
@@ -380,10 +307,12 @@ onBeforeUnmount(() => {
                 : t("lifeWarning.save")
             }}
           </button>
+
           <button
             class="clws-btn clws-btn-reset"
             :disabled="resettingId === item.id"
             @click="resetComponent(item)"
+            type="button"
           >
             {{
               resettingId === item.id
@@ -398,15 +327,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.clws {
-  margin-top: -12px;
-}
+/* giữ nguyên CSS của em */
+.clws { margin-top: -12px; }
 
 .clws-header {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   margin-bottom: 16px;
+  gap: 12px;
 }
 
 .clws-back-btn {
@@ -420,18 +349,50 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
-.clws-header-spacer {
-  justify-self: flex-end;
-  width: 80px;
-}
-
 .clws-title {
   font-size: 26px;
   font-weight: 600;
   text-align: center;
+  margin: 0;
 }
 
-/* 2 cột cố định */
+.clws-toggle {
+  justify-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle-label { font-size: 15px; font-weight: 700; }
+.toggle-state { font-size: 14px; font-weight: 800; }
+
+.switch { position: relative; width: 44px; height: 24px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+
+.slider {
+  position: absolute;
+  inset: 0;
+  background-color: #ccc;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: 0.25s;
+}
+
+.slider::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.25s;
+}
+
+.switch input:checked + .slider { background-color: #4caf50; }
+.switch input:checked + .slider::before { transform: translateX(20px); }
+
 .clws-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -447,23 +408,13 @@ onBeforeUnmount(() => {
   align-items: flex-start;
 }
 
-/* highlight khi life warning */
 .clws-card--alarmed {
   border: 2px solid #e53935;
   box-shadow: 0 0 8px rgba(229, 57, 53, 0.7);
 }
 
-.clws-left {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.clws-name {
-  font-size: 20px;
-  font-weight: 500;
-  color: #2f5597;
-}
+.clws-left { display: flex; flex-direction: column; gap: 8px; }
+.clws-name { font-size: 20px; font-weight: 500; color: #2f5597; }
 
 .clws-row {
   display: grid;
@@ -481,9 +432,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
-.clws-acc {
-  min-width: 40px;
-}
+.clws-acc { min-width: 40px; }
 
 .clws-input {
   width: 100%;
@@ -511,19 +460,13 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.clws-btn-save {
-  background: rgb(157, 195, 230);
-  padding: 5px 30px;
-}
-
-.clws-btn-reset {
-  background: #ffe6cc;
-  border-color: #d28b4b;
-}
+.clws-btn-save { background: rgb(157, 195, 230); padding: 5px 30px; }
+.clws-btn-reset { background: #ffe6cc; border-color: #d28b4b; }
 
 @media (max-width: 900px) {
-  .clws-grid {
-    grid-template-columns: 1fr;
-  }
+  .clws-grid { grid-template-columns: 1fr; }
+  .clws-header { grid-template-columns: 1fr; }
+  .clws-title { text-align: left; }
+  .clws-toggle { justify-self: flex-start; }
 }
 </style>
