@@ -1,7 +1,5 @@
 <script setup>
 import { RouterView, useRoute, useRouter } from "vue-router";
-import { onMounted, onBeforeUnmount, watch } from "vue";
-import { apiFetch } from "@/utils/apiFetch";
 import { useAuthStore } from "@/stores/auth";
 import { useI18n } from "@/languages/i18n";
 
@@ -28,97 +26,6 @@ const onLogout = () => {
   auth.logout();
   router.push("/login");
 };
-
-/* =========================
-   ✅ GLOBAL COMPONENT-LIFE TICK
-========================= */
-const TICK_INTERVAL_MS = 60000; // 1 phút thật = 1 giờ ảo
-const DELTA_HOURS = 1;
-
-const COMPONENT_IDS = [
-  "impeller1",
-  "impeller2",
-  "blade1",
-  "blade2",
-  "claw1",
-  "claw2",
-  "clawTube1",
-  "clawTube2",
-  "filter",
-];
-
-let tickTimer = null;
-let ticking = false;
-
-async function tickAllComponents() {
-  // ✅ chỉ tick khi login
-  if (!auth.isLoggedIn) return;
-
-  // ✅ nếu tab hidden thì khỏi tick (tuỳ bạn muốn)
-  if (document.visibilityState !== "visible") return;
-
-  // ✅ tránh chạy chồng
-  if (ticking) return;
-  ticking = true;
-
-  try {
-    for (const id of COMPONENT_IDS) {
-      const res = await apiFetch("/api/component-life/tick", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, deltaHours: DELTA_HOURS }),
-      });
-
-      if (!res.ok) {
-        console.warn(`Tick failed for ${id} (status: ${res.status})`);
-      }
-    }
-  } catch (e) {
-    console.error("Global tick error:", e);
-  } finally {
-    ticking = false;
-  }
-}
-
-function startGlobalTick() {
-  if (tickTimer) return;
-  tickTimer = setInterval(tickAllComponents, TICK_INTERVAL_MS);
-
-  // ✅ chạy ngay 1 phát khi start
-  tickAllComponents();
-}
-
-function stopGlobalTick() {
-  if (tickTimer) {
-    clearInterval(tickTimer);
-    tickTimer = null;
-  }
-}
-
-function handleVisibilityChange() {
-  if (document.visibilityState === "visible") {
-    tickAllComponents();
-  }
-}
-
-onMounted(() => {
-  startGlobalTick();
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-});
-
-// ✅ Khi user vừa login xong (token có), tick ngay lập tức
-watch(
-  () => auth.isLoggedIn,
-  (val) => {
-    if (val) tickAllComponents();
-  },
-  { immediate: true }
-);
-
-onBeforeUnmount(() => {
-  stopGlobalTick();
-  document.removeEventListener("visibilitychange", handleVisibilityChange);
-});
 </script>
 
 <template>
@@ -140,13 +47,11 @@ onBeforeUnmount(() => {
             >
               {{ t(item.labelKey) }}
             </button>
-          <button class="menu-item logout-item" @click="onLogout" type="button">
-              {{ t("common.logout") }}
-          </button>
-          </nav>
 
-        
-       
+            <button class="menu-item logout-item" @click="onLogout" type="button">
+              {{ t("common.logout") }}
+            </button>
+          </nav>
         </div>
       </aside>
 
