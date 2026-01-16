@@ -1,0 +1,100 @@
+# =========================
+# Packaged / Desktop output (DO NOT PUSH)
+# =========================
+desktop/
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+app.log
+
+# =========================
+# Dependencies
+# =========================
+node_modules/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Build outputs (Vite / Vue / React / general)
+# =========================
+dist/
+dist-ssr/
+build/
+out/
+release/
+coverage/
+*.local
+*.map
+
+# =========================
+# Electron / Packaging artifacts
+# =========================
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.asar
+
+# electron-builder / forge common outputs
+**/win-unpacked/
+**/win-ia32-unpacked/
+**/win-arm64-unpacked/
+**/mac/
+**/mac-arm64/
+**/linux-unpacked/
+**/installer/
+**/installers/
+**/releases/
+
+# =========================
+# Env files (keep secrets out of git)
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Editor directories and files
+# =========================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# =========================
+# TypeScript cache
+# =========================
+*.tsbuildinfo
+
+# =========================
+# Lint cache
+# =========================
+.eslintcache
+
+# =========================
+# Cypress
+# =========================
+/cypress/videos/
+/cypress/screenshots/
+
+# =========================
+# Vitest
+# =========================
+__screenshots__/
